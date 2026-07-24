@@ -1,0 +1,132 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Outfit", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  /* Overrides for Slate to Warm Sand / Stone / Oatmeal tones */
+  --color-slate-50: #faf9f5; /* Warm Alabaster/Linen background */
+  --color-slate-100: #f2efe7; /* Light Sandstone */
+  --color-slate-200: #e4decb; /* Soft sand border */
+  --color-slate-300: #cfc7b2;
+  --color-slate-400: #b1a690;
+  --color-slate-500: #887d68; /* Warm slate taupe */
+  --color-slate-600: #6c6251;
+  --color-slate-700: #514a3c;
+  --color-slate-800: #363128; /* Warm deep charcoal */
+  --color-slate-900: #201d18; /* Warm mineral black */
+
+  /* Overrides for Blue to Serene Sage / Forest Green tones */
+  --color-blue-50: #f1f5f2;
+  --color-blue-100: #e1eae3;
+  --color-blue-200: #caedd3;
+  --color-blue-300: #a4ceaf;
+  --color-blue-400: #7baf89;
+  --color-blue-500: #507b58; /* Core Natural Tones Forest/Sage Green */
+  --color-blue-600: #3f6146;
+  --color-blue-700: #2f4a35;
+  --color-blue-800: #203224;
+  --color-blue-900: #121f15;
+
+  /* Overrides for Brand to match the Sage Green primary */
+  --color-brand-50: #f1f5f2;
+  --color-brand-100: #e1eae3;
+  --color-brand-500: #507b58;
+  --color-brand-600: #3f6146;
+  --color-brand-700: #2f4a35;
+
+  /* Overrides for Amber to rich earth-baked Terracotta/Clay */
+  --color-amber-50: #faf4ef;
+  --color-amber-100: #f4e6dc;
+  --color-amber-200: #eccbbb;
+  --color-amber-300: #deac95;
+  --color-amber-400: #cd8a69;
+  --color-amber-500: #bd6a47; /* Earthy Terracotta */
+  --color-amber-600: #a35534;
+  --color-amber-700: #884326;
+  --color-amber-800: #6d3119;
+  --color-amber-900: #4e1f0e;
+
+  /* Overrides for Gold/Yellow to warm Camel/Ochre */
+  --color-gold-50: #f9f3e6;
+  --color-gold-100: #f3e4c7;
+  --color-gold-500: #ca9766; /* Warm Ochre/Sand */
+  --color-gold-600: #ad7c50;
+
+  /* Overrides for Emerald to soft organic grass green */
+  --color-emerald-50: #f2f5ef;
+  --color-emerald-100: #e3ebd2;
+  --color-emerald-500: #668b62;
+  --color-emerald-600: #4d6c4a;
+
+  /* Overrides for Rose/Red to deep rusty coral */
+  --color-rose-50: #f9f2f0;
+  --color-rose-500: #ca5f4f;
+  --color-rose-600: #a9493c;
+
+  /* Accent */
+  --color-accent-400: #ca9766;
+  --color-accent-500: #bd6a47;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cfc7b2;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #b1a690;
+}
+
+/* Custom visual utilities */
+.glass-panel {
+  background: rgba(250, 249, 245, 0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(228, 222, 203, 0.8);
+}
+
+.gold-glow {
+  text-shadow: 0 0 10px rgba(202, 151, 102, 0.2);
+}
+
+body {
+  background-color: #faf9f5;
+  color: #201d18;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+/* Print Overrides to print ONLY the tax invoice */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #printable-invoice-container, #printable-invoice-container * {
+    visibility: visible;
+  }
+  #printable-invoice-container {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0;
+    margin: 0;
+    box-shadow: none !important;
+    border: none !important;
+  }
+}
+
+
+
