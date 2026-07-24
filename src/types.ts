@@ -312,6 +312,7 @@ export interface Employee {
   salary: number;
   joiningDate: string;
   status: "Active" | "Inactive";
+  avatarUrl?: string;
 }
 
 export interface SystemNotification {

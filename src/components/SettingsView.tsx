@@ -166,9 +166,36 @@ export function SettingsView({ db, onUpdateDb }: SettingsViewProps) {
       avatarUrl: avatarUrl.trim()
     };
 
+    // Find the employee that matches the session
+    const sessionEmployee = db.employees.find(emp => emp.id === db.session.id);
+    
+    // Update the employee record (this is what persists to database)
+    const updatedEmployees = sessionEmployee 
+      ? db.employees.map(emp => 
+          emp.id === db.session.id 
+            ? { ...emp, name: operatorName.trim(), role: operatorRole, avatarUrl: avatarUrl.trim() }
+            : emp
+        )
+      : [
+          // If no matching employee exists, create one
+          {
+            id: db.session.id,
+            name: operatorName.trim(),
+            email: db.session.email,
+            phone: '',
+            role: operatorRole,
+            salary: 0,
+            joiningDate: new Date().toISOString().split('T')[0],
+            status: 'Active',
+            avatarUrl: avatarUrl.trim()
+          },
+          ...db.employees
+        ];
+
     onUpdateDb({
       ...db,
-      session: updatedSession
+      session: updatedSession,
+      employees: updatedEmployees  // Update employees array so it saves to Supabase
     });
 
     showToast("Operator profile credentials saved successfully.", "success");

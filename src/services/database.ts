@@ -1004,8 +1004,12 @@ export async function loadDatabase(): Promise<ErpDatabase | null> {
           id: defaultEmployee.id,
           name: defaultEmployee.name,
           email: defaultEmployee.email,
+          phone: defaultEmployee.phone,
           role: defaultEmployee.role,
-          avatar_url: defaultEmployee.avatar_url
+          salary: defaultEmployee.salary,
+          joiningDate: defaultEmployee.joining_date,
+          status: defaultEmployee.status as "Active",
+          avatarUrl: defaultEmployee.avatar_url
         };
       } catch (error) {
         console.error('❌ Error creating default employee:', error);
@@ -1017,7 +1021,7 @@ export async function loadDatabase(): Promise<ErpDatabase | null> {
       name: owner.name,
       email: owner.email,
       role: owner.role as any,
-      avatarUrl: owner.avatar_url || ''
+      avatarUrl: owner.avatarUrl || ''
     } : {
       id: 'USR-001',
       name: 'Admin User',
