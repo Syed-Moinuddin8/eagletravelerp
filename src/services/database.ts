@@ -968,7 +968,49 @@ export async function loadDatabase(): Promise<ErpDatabase | null> {
     ]);
     
     // Get session from first employee (owner)
-    const owner = employees.find(e => e.role === 'Owner') || employees[0];
+    let owner = employees.find(e => e.role === 'Owner') || employees[0];
+    
+    // If no employees exist, create a default owner employee
+    if (!owner) {
+      console.log('⚠️ No employees found in database, creating default owner...');
+      const defaultEmployee = {
+        id: 'USR-001',
+        name: 'Admin User',
+        email: 'admin@eagletravels.com',
+        phone: '+91 98860 12345',
+        role: 'Owner',
+        salary: 0,
+        joining_date: new Date().toISOString().split('T')[0],
+        status: 'Active',
+        avatar_url: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&q=80'
+      };
+      
+      try {
+        await upsertEmployee({
+          id: defaultEmployee.id,
+          name: defaultEmployee.name,
+          email: defaultEmployee.email,
+          phone: defaultEmployee.phone,
+          role: defaultEmployee.role,
+          salary: defaultEmployee.salary,
+          joiningDate: defaultEmployee.joining_date,
+          status: defaultEmployee.status,
+          avatarUrl: defaultEmployee.avatar_url
+        });
+        console.log('✅ Default owner employee created in database');
+        
+        // Set owner to the default employee we just created
+        owner = {
+          id: defaultEmployee.id,
+          name: defaultEmployee.name,
+          email: defaultEmployee.email,
+          role: defaultEmployee.role,
+          avatar_url: defaultEmployee.avatar_url
+        };
+      } catch (error) {
+        console.error('❌ Error creating default employee:', error);
+      }
+    }
     
     const session = owner ? {
       id: owner.id,
