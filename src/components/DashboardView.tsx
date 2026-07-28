@@ -112,8 +112,14 @@ export function DashboardView({
   const totalInvoicesAmount = db.invoices.reduce((sum, inv) => sum + inv.totalAmount, 0);
   const totalBalanceDue = db.invoices.reduce((sum, inv) => sum + inv.balanceDue, 0);
 
-  // Recent trips for the Live Dispatch Feed
-  const recentTrips = [...db.trips].reverse().slice(0, 5);
+  // Recent trips for the Live Dispatch Feed - sorted by most recent first
+  const recentTrips = [...db.trips]
+    .sort((a, b) => {
+      // Sort by trip ID (which contains date) in descending order
+      // Trip IDs are like "TRIP-2026-523", "TRIP-2026-917", etc.
+      return b.id.localeCompare(a.id);
+    })
+    .slice(0, 5);
 
   return (
     <div className="space-y-8 animate-fade-in" id="dashboard-view">
