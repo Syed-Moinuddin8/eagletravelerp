@@ -2,6 +2,21 @@
 
 ## [Latest Update] - 2026-07-26
 
+### 🎯 Recent Updates
+
+#### Dashboard Recent Activity Sorting Fix
+**Issue**: Recent Dispatch Activity section was not showing trips in proper descending order (most recent first).
+
+**Fix**:
+- Replaced simple `.reverse()` with proper `.sort()` method
+- Now sorts by trip ID in descending order (most recent trips appear first)
+- Ensures consistent ordering regardless of how trips are stored
+
+**Files Modified**:
+- `src/components/DashboardView.tsx`
+
+---
+
 ### 🐛 Critical Bug Fixes
 
 #### 1. Engage Amount Not Included in Trip Cost
