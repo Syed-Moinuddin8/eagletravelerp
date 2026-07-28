@@ -84,23 +84,40 @@ export function DashboardView({
   onAddInvoice,
   onUpdateDb
 }: DashboardViewProps) {
+  // Get current month and year
+  const now = new Date();
+  const currentMonth = now.getMonth(); // 0-11
+  const currentYear = now.getFullYear();
+  
+  // Helper function to check if a date is in current month
+  const isCurrentMonth = (dateString: string) => {
+    if (!dateString) return false;
+    const date = new Date(dateString);
+    return date.getMonth() === currentMonth && date.getFullYear() === currentYear;
+  };
+  
   // Compute key stats
   const activeTripsCount = db.trips.filter(t => t.status === TripStatus.RUNNING || t.status === TripStatus.STARTED).length;
   
-  // Financial calculation (only counting payments for valid active trips)
+  // Financial calculation - CURRENT MONTH ONLY (only counting payments from this month)
   const totalRevenue = db.payments.reduce((sum, p) => {
     if (p.tripNumber) {
       const tripExists = db.trips.some(t => t.id === p.tripNumber);
       if (!tripExists) return sum;
     }
+    // Only count payments from current month
+    if (!isCurrentMonth(p.date)) return sum;
     return sum + p.amount;
   }, 0);
-  const totalExpenses = db.expenses.reduce((sum, e) => sum + e.amount, 0);
   
-  // Total profit calculation:
-  // 1. Sum of profit from completed trips
+  const totalExpenses = db.expenses
+    .filter(e => isCurrentMonth(e.date)) // Only current month expenses
+    .reduce((sum, e) => sum + e.amount, 0);
+  
+  // Total profit calculation - CURRENT MONTH ONLY:
+  // 1. Sum of profit from trips completed in current month
   const completedTripsProfit = db.trips
-    .filter(t => t.status === TripStatus.COMPLETED)
+    .filter(t => t.status === TripStatus.COMPLETED && isCurrentMonth(t.endDate || t.startDate))
     .reduce((sum, t) => sum + (t.calculatedProfit || 0), 0);
 
   // 2. Net profit from receipts minus operational expenses (only if expenses are logged)
@@ -194,7 +211,7 @@ export function DashboardView({
         >
           <div className="flex justify-between items-start">
             <div className="space-y-1">
-              <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Total Received</p>
+              <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Total Received (This Month)</p>
               <h3 className="text-3xl font-bold font-display text-emerald-600">{db.settings.currencySymbol || "₹"}{totalRevenue.toLocaleString("en-IN")}</h3>
             </div>
             <span className="p-3 bg-emerald-50 rounded-xl text-emerald-500 group-hover:bg-emerald-500 group-hover:text-white transition-colors duration-200">
@@ -202,7 +219,7 @@ export function DashboardView({
             </span>
           </div>
           <div className="mt-4 flex items-center text-xs text-emerald-600 font-medium">
-            <span>Invoice payment reconciliation</span>
+            <span>Current month payments</span>
             <ChevronRight className="w-3.5 h-3.5 ml-1 group-hover:translate-x-1 transition-transform" />
           </div>
         </div>
@@ -215,7 +232,7 @@ export function DashboardView({
         >
           <div className="flex justify-between items-start">
             <div className="space-y-1">
-              <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Total Profit</p>
+              <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Total Profit (This Month)</p>
               <h3 className={`text-3xl font-bold font-display ${totalProfit >= 0 ? 'text-brand-500' : 'text-rose-500'}`}>
                 {db.settings.currencySymbol || "₹"}{totalProfit.toLocaleString("en-IN")}
               </h3>
@@ -225,7 +242,7 @@ export function DashboardView({
             </span>
           </div>
           <div className="mt-4 flex items-center text-xs text-gold-500 font-medium">
-            <span>View business profit analytics</span>
+            <span>Current month profit analytics</span>
             <ChevronRight className="w-3.5 h-3.5 ml-1 group-hover:translate-x-1 transition-transform" />
           </div>
         </div>
