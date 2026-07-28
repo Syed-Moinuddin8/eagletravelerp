@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useToasts } from "./Toast";
 import { jsPDF } from "jspdf";
+import { format12HourTime } from "../utils/timeUtils";
 import {
   ErpDatabase,
   Trip,
@@ -22,6 +23,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   Clock,
+  PhoneCall,
   Send,
   User,
   Car,
@@ -78,6 +80,7 @@ export function TripsView({
     totalKm: 250,
     totalBata: 1,
     toll: 0,
+    engageAmount: 0,
     amountTook: 0,
     paymentMethod: "UPI" as "UPI" | "Cash" | "Bank Transfer" | "Card"
   });
@@ -152,33 +155,22 @@ export function TripsView({
         }
       }
 
-      // Check if customer has an upcoming or active trip to auto-fill booking dates
-      const custTrips = db.trips.filter(t => t.customerId === customerId);
-      const upcomingTrip = custTrips.find(t => t.status === TripStatus.UPCOMING || t.status === TripStatus.RUNNING) || custTrips[0];
-
       setFormData(prev => ({
         ...prev,
         customerId,
-        pickup: cust.pickupLocation || upcomingTrip?.pickup || prev.pickup,
-        drop: cust.visitingPlaces || upcomingTrip?.drop || prev.drop,
-        startDate: cust.startDate || upcomingTrip?.startDate || prev.startDate,
-        endDate: cust.endDate || upcomingTrip?.endDate || prev.endDate,
-        pickupTime: cust.pickupTime || upcomingTrip?.pickupTime || prev.pickupTime,
-        closingTime: upcomingTrip?.closingTime || prev.closingTime,
-        passengers: cust.passengers || upcomingTrip?.passengers || prev.passengers,
-        advancePaid: cust.advanceAmount ? String(cust.advanceAmount) : (upcomingTrip?.advancePaid ? String(upcomingTrip.advancePaid) : prev.advancePaid),
+        pickup: cust.pickupLocation || prev.pickup,
+        drop: cust.visitingPlaces || prev.drop,
+        startDate: cust.startDate || prev.startDate,
+        endDate: cust.endDate || prev.endDate,
+        pickupTime: cust.pickupTime || prev.pickupTime,
+        passengers: cust.passengers || prev.passengers,
+        advancePaid: cust.advanceAmount ? String(cust.advanceAmount) : "",
         notes: cust.notes ? `Customer preferences: ${cust.notes}` : prev.notes,
         vehicleId: matchedVehicleId
       }));
 
       setLastFetchedCustomerId(customerId);
-
-      const bookingMsg = upcomingTrip 
-        ? ` with upcoming booking (${upcomingTrip.startDate} to ${upcomingTrip.endDate})` 
-        : cust.startDate 
-        ? ` with booking dates (${cust.startDate}${cust.endDate ? ` to ${cust.endDate}` : ''})`
-        : '';
-      showToast(`Loaded ${cust.name}'s profile${bookingMsg}!`, "info");
+      showToast(`Loaded ${cust.name}'s profile!`, "info");
     } else {
       setFormData(prev => ({
         ...prev,
@@ -351,7 +343,7 @@ export function TripsView({
     doc.setFont("helvetica", "bold");
     doc.text("Start Time", 102, 32 + 6);
     doc.setFont("helvetica", "normal");
-    doc.text(trip.pickupTime || "5:30 PM", 127, 32 + 6);
+    doc.text(format12HourTime(trip.pickupTime) || "5:30 PM", 127, 32 + 6);
 
     // Row 2
     doc.setFont("helvetica", "bold");
@@ -446,14 +438,14 @@ export function TripsView({
     doc.setFont("helvetica", "bold");
     doc.text("Start Time", 17, 132);
     doc.setFont("helvetica", "normal");
-    doc.text(trip.pickupTime || "", 52, 132);
+    doc.text(format12HourTime(trip.pickupTime) || "", 52, 132);
 
     doc.setFont("helvetica", "bold");
     doc.text("Parking", 77, 132);
 
     doc.text("End Time", 137, 132);
     doc.setFont("helvetica", "normal");
-    doc.text(trip.closingTime || "", 172, 132);
+    doc.text(format12HourTime(trip.closingTime) || "", 172, 132);
 
     // Row 3 (Y = 136 to 146, center text at Y = 142)
     doc.setFont("helvetica", "bold");
@@ -516,26 +508,19 @@ export function TripsView({
 
   // Dynamically enrich trip with advance payments recorded in Customer Directory, Invoices, or Payments Ledger
   const getEnrichedTrip = (t: Trip): Trip => {
-    let advance = t.advancePaid || 0;
+    const cust = db.customers.find(c => c.id === t.customerId || (t.customerName && c.name.toLowerCase().trim() === t.customerName.toLowerCase().trim()));
+    let advance = t.advancePaid !== undefined && t.advancePaid !== 0 ? t.advancePaid : (cust?.advanceAmount || 0);
 
-    // 1. Check customer's recorded advanceAmount
-    const cust = db.customers.find(c => c.id === t.customerId || (t.customerName && c.name.toLowerCase() === t.customerName.toLowerCase()));
-    if (cust && cust.advanceAmount && cust.advanceAmount > advance) {
-      advance = cust.advanceAmount;
-    }
-
-    // 2. Check associated invoice's advanceAmount
+    // 1. Check associated invoice's advanceAmount
     const inv = db.invoices.find(i => i.tripId === t.id || i.tripNumber === t.id);
     if (inv && inv.advanceAmount && inv.advanceAmount > advance) {
       advance = inv.advanceAmount;
     }
 
-    // 3. Check payments ledger entries for this trip, invoice, or customer
+    // 2. Check payments ledger entries strictly linked to this specific trip ID or its invoice ID
     const tripPayments = db.payments.filter(p => 
       p.tripNumber === t.id || 
-      (inv && p.invoiceId === inv.id) ||
-      (t.customerName && p.customerName.toLowerCase().trim() === t.customerName.toLowerCase().trim()) ||
-      (t.customerId && (p.tripNumber === `CUST-${t.customerId}` || p.tripNumber === `TRIP-${t.customerId}`))
+      (inv && p.invoiceId === inv.id)
     );
     if (tripPayments.length > 0) {
       const sumPayments = tripPayments.reduce((acc, p) => acc + (p.amount || 0), 0);
@@ -635,7 +620,18 @@ export function TripsView({
       ? formData.stopsText.split(",").map((s, idx) => ({ id: `s-${idx}-${Date.now()}`, location: s.trim() }))
       : [];
 
-    const newTripId = `TRIP-2026-${Math.floor(100 + Math.random() * 900)}`;
+    // Calculate next sequential trip number in series (TRIP-2026-001, TRIP-2026-002, TRIP-2026-003...)
+    const existingNumbers = db.trips
+      .map(t => {
+        const match = t.id.match(/\d+$/);
+        return match ? parseInt(match[0], 10) : 0;
+      })
+      .filter(num => !isNaN(num));
+
+    const maxNum = existingNumbers.length > 0 ? Math.max(...existingNumbers) : 0;
+    const nextSeqNum = maxNum + 1;
+    const newTripId = `TRIP-2026-${String(nextSeqNum).padStart(3, '0')}`;
+
     // Get base fare from customer's assigned rate, fallback to 0
     const baseFare = customer.assignedRateEngage || 0;
     const totalFare = baseFare; // Total fare on trip dispatch equals base fare
@@ -674,7 +670,7 @@ export function TripsView({
         {
           id: `ev-${Date.now()}`,
           status: "Upcoming",
-          message: `Trip created and dispatched. Vehicle (${vehicle.vehicleNumber}) and Driver (${driver.name}) allocated.${advancePaid > 0 ? ` Advance payment of ₹${advancePaid.toLocaleString("en-IN")} received.` : ""}`,
+          message: `Trip created and dispatched. Vehicle (${formattedVehicleModel}) and Driver (${driver.name}) allocated.${advancePaid > 0 ? ` Advance payment of ₹${advancePaid.toLocaleString("en-IN")} received.` : ""}`,
           timestamp: new Date().toISOString()
         }
       ],
@@ -699,7 +695,7 @@ export function TripsView({
     const newNotification = {
       id: `n-${Date.now()}`,
       title: "Trip Dispatched",
-      message: `Trip ${newTripId} successfully assigned to ${driver.name} with vehicle ${vehicle.vehicleNumber}.${advancePaid > 0 ? ` Advance: ₹${advancePaid}` : ""}`,
+      message: `Trip ${newTripId} successfully assigned to ${driver.name} with vehicle ${formattedVehicleModel}.${advancePaid > 0 ? ` Advance: ₹${advancePaid}` : ""}`,
       type: "success" as const,
       timestamp: new Date().toISOString(),
       read: false
@@ -755,31 +751,25 @@ export function TripsView({
       return;
     }
 
-    const cust = db.customers.find(c => c.id === trip.customerId || (trip.customerName && c.name.toLowerCase().trim() === trip.customerName.toLowerCase().trim()));
-
-    // Find all existing payments for this trip or customer
+    const inv = db.invoices.find(i => i.tripId === trip.id || i.tripNumber === trip.id);
     const existingPayments = db.payments.filter(p => 
       p.tripNumber === trip.id || 
-      (trip.customerName && p.customerName.toLowerCase().trim() === trip.customerName.toLowerCase().trim()) ||
-      (trip.customerId && (p.tripNumber === `CUST-${trip.customerId}` || p.tripNumber === `TRIP-${trip.customerId}`))
+      (inv && p.invoiceId === inv.id)
     );
 
     let finalPayments = [...db.payments];
-    const existingSum = existingPayments.reduce((sum, p) => sum + p.amount, 0);
-
-    // If there was an unrecorded initial advance amount on customer or trip, record it as an explicit payment entry first
-    const baseAdvance = Math.max(cust?.advanceAmount || 0, trip.advancePaid || 0);
+    const baseAdvance = trip.advancePaid || 0;
     if (existingPayments.length === 0 && baseAdvance > 0) {
       const initialPayment = {
         id: `PAY-ADV-INIT-${trip.id}`,
-        invoiceId: null,
+        invoiceId: inv?.id || null,
         tripNumber: trip.id,
         customerName: trip.customerName,
         amount: baseAdvance,
         paymentMethod: "UPI" as const,
         transactionId: `TXN-INIT-${Date.now().toString().slice(-4)}`,
         date: trip.startDate || new Date().toISOString().split('T')[0],
-        notes: `Initial advance payment recorded at booking.`
+        notes: `Initial advance payment recorded for trip ${trip.id}.`
       };
       finalPayments = [initialPayment, ...finalPayments];
     }
@@ -863,37 +853,33 @@ export function TripsView({
       return;
     }
 
-    const cust = db.customers.find(c => c.id === selectedTrip.customerId || (selectedTrip.customerName && c.name.toLowerCase().trim() === selectedTrip.customerName.toLowerCase().trim()));
-
+    const targetInvoice = db.invoices.find(inv => inv.tripId === selectedTrip.id || inv.tripNumber === selectedTrip.id);
     const existingPayments = db.payments.filter(p => 
       p.tripNumber === selectedTrip.id || 
-      (selectedTrip.customerName && p.customerName.toLowerCase().trim() === selectedTrip.customerName.toLowerCase().trim()) ||
-      (selectedTrip.customerId && (p.tripNumber === `CUST-${selectedTrip.customerId}` || p.tripNumber === `TRIP-${selectedTrip.customerId}`))
+      (targetInvoice && p.invoiceId === targetInvoice.id)
     );
 
     let newTotalAdvance = 0;
     let finalPayments = [...db.payments];
 
     if (paymentMode === "add") {
-      const existingSum = existingPayments.reduce((sum, p) => sum + p.amount, 0);
-      const baseAdvance = Math.max(cust?.advanceAmount || 0, selectedTrip.advancePaid || 0);
+      const baseAdvance = selectedTrip.advancePaid || 0;
 
       if (existingPayments.length === 0 && baseAdvance > 0) {
         const initialPayment = {
           id: `PAY-ADV-INIT-${selectedTrip.id}`,
-          invoiceId: null,
+          invoiceId: targetInvoice?.id || null,
           tripNumber: selectedTrip.id,
           customerName: selectedTrip.customerName,
           amount: baseAdvance,
           paymentMethod: "UPI" as const,
           transactionId: `TXN-INIT-${Date.now().toString().slice(-4)}`,
           date: selectedTrip.startDate || new Date().toISOString().split('T')[0],
-          notes: `Initial advance payment recorded at booking.`
+          notes: `Initial advance payment recorded for trip ${selectedTrip.id}.`
         };
         finalPayments = [initialPayment, ...finalPayments];
       }
 
-      const targetInvoice = db.invoices.find(inv => inv.tripId === selectedTrip.id || inv.tripNumber === selectedTrip.id);
       const newPayment = {
         id: `PAY-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
         invoiceId: targetInvoice?.id || null,
@@ -909,8 +895,7 @@ export function TripsView({
 
       const allTripPayments = finalPayments.filter(p => 
         p.tripNumber === selectedTrip.id || 
-        (selectedTrip.customerName && p.customerName.toLowerCase().trim() === selectedTrip.customerName.toLowerCase().trim()) ||
-        (selectedTrip.customerId && (p.tripNumber === `CUST-${selectedTrip.customerId}` || p.tripNumber === `TRIP-${selectedTrip.customerId}`))
+        (targetInvoice && p.invoiceId === targetInvoice.id)
       );
       newTotalAdvance = allTripPayments.reduce((sum, p) => sum + p.amount, 0);
     } else {
@@ -918,7 +903,7 @@ export function TripsView({
       if (existingPayments.length === 0 && val > 0) {
         const newPayment = {
           id: `PAY-ADV-SET-${selectedTrip.id}`,
-          invoiceId: null,
+          invoiceId: targetInvoice?.id || null,
           tripNumber: selectedTrip.id,
           customerName: selectedTrip.customerName,
           amount: val,
@@ -936,13 +921,6 @@ export function TripsView({
         return { ...t, advancePaid: newTotalAdvance };
       }
       return t;
-    });
-
-    const updatedCustomers = db.customers.map(c => {
-      if (c.id === selectedTrip.customerId || c.name.toLowerCase().trim() === selectedTrip.customerName.toLowerCase().trim()) {
-        return { ...c, advanceAmount: newTotalAdvance };
-      }
-      return c;
     });
 
     const updatedInvoices = db.invoices.map(inv => {
@@ -964,7 +942,6 @@ export function TripsView({
     onUpdateDb({
       ...db,
       trips: updatedTrips,
-      customers: updatedCustomers,
       invoices: updatedInvoices,
       payments: finalPayments
     });
@@ -979,21 +956,26 @@ export function TripsView({
     if (!selectedTrip) return;
 
     if (status === TripStatus.COMPLETED) {
-      const customer = db.customers.find(c => c.id === selectedTrip.customerId);
-      const initialKm = 250;
-      const initialBata = 1;
-      const initialToll = 0;
+      const customer = db.customers.find(c => c.id === selectedTrip.customerId || (selectedTrip.customerName && c.name.toLowerCase().trim() === selectedTrip.customerName.toLowerCase().trim()));
+      const initialKm = selectedTrip.totalKm || 250;
+      const initialBata = selectedTrip.totalBata || 1;
+      const initialToll = selectedTrip.tollCharges || 0;
       const perKmRate = customer?.perKmRate || 12;
       const driverBataRate = customer?.driverBata || 500;
-      
-      const subtotal = (initialKm * perKmRate) + (initialBata * driverBataRate) + initialToll;
+      const initialEngage = customer?.assignedRateEngage !== undefined && customer?.assignedRateEngage !== null ? customer.assignedRateEngage : (selectedTrip.baseFare || 0);
+
+      const subtotal = initialEngage + (initialKm * perKmRate) + (initialBata * driverBataRate) + initialToll;
       const totalFare = subtotal;
-      const outstanding = Math.max(0, totalFare - selectedTrip.advancePaid);
+
+      const tripPayments = db.payments.filter(p => p.tripNumber === selectedTrip.id);
+      const totalAdvancePaid = tripPayments.reduce((sum, p) => sum + p.amount, 0);
+      const outstanding = Math.max(0, totalFare - totalAdvancePaid);
 
       setCompletionData({
         totalKm: initialKm,
         totalBata: initialBata,
         toll: initialToll,
+        engageAmount: initialEngage,
         amountTook: outstanding,
         paymentMethod: "UPI"
       });
@@ -1062,16 +1044,17 @@ export function TripsView({
     e.preventDefault();
     if (!selectedTrip) return;
 
-    const customer = db.customers.find(c => c.id === selectedTrip.customerId);
+    const customer = db.customers.find(c => c.id === selectedTrip.customerId || (selectedTrip.customerName && c.name.toLowerCase().trim() === selectedTrip.customerName.toLowerCase().trim()));
     const perKmRate = customer?.perKmRate || 12;
     const driverBataRate = customer?.driverBata || 500;
 
     const kmCost = completionData.totalKm * perKmRate;
     const bataCost = completionData.totalBata * driverBataRate;
     const tollCost = completionData.toll;
+    const engageAmount = customer?.assignedRateEngage || selectedTrip.baseFare || 0; // Base/Engage amount
     
-    // Subtotal = KM Cost + Bata Cost + Toll Cost (no base fare)
-    const subtotal = kmCost + bataCost + tollCost;
+    // Subtotal = Engage Amount + KM Cost + Bata Cost + Toll Cost
+    const subtotal = engageAmount + kmCost + bataCost + tollCost;
     const totalFare = subtotal; // Trip total cost is without GST
 
     // Calculate total advance from actual payment entries
@@ -1087,7 +1070,7 @@ export function TripsView({
     const newEv: TripTimelineEvent = {
       id: `ev-${Date.now()}`,
       status: TripStatus.COMPLETED,
-      message: `Trip completed. Kilometers: ${completionData.totalKm} km (₹${kmCost}), Driver Bata Days: ${completionData.totalBata} (₹${bataCost}), Tolls: ₹${completionData.toll}. Complete Trip Cost: ₹${totalFare.toLocaleString("en-IN")}. Collected: ₹${Number(completionData.amountTook).toLocaleString("en-IN")}.`,
+      message: `Trip completed. Engage: ₹${engageAmount}, Kilometers: ${completionData.totalKm} km (₹${kmCost}), Driver Bata Days: ${completionData.totalBata} (₹${bataCost}), Tolls: ₹${completionData.toll}. Complete Trip Cost: ₹${totalFare.toLocaleString("en-IN")}. Collected: ₹${Number(completionData.amountTook).toLocaleString("en-IN")}.`,
       timestamp: new Date().toISOString()
     };
 
@@ -1111,7 +1094,7 @@ export function TripsView({
           // Store calculated costs
           kmCost,
           bataCost,
-          baseFare: selectedTrip.baseFare || 0,
+          baseFare: engageAmount, // Store engage amount as base fare
           gstAmount: 0,
           totalFare,
           advancePaid: newAdvancePaid,
@@ -1339,7 +1322,7 @@ export function TripsView({
                       </div>
                       <div>
                         <span className="text-[10px] text-slate-400 uppercase font-semibold">Default Pickup Time</span>
-                        <p className="text-emerald-700 font-bold">{selectedCust.pickupTime || "08:30 AM"}</p>
+                        <p className="text-emerald-700 font-bold">{format12HourTime(selectedCust.pickupTime) || "08:30 AM"}</p>
                       </div>
                       <div>
                         <span className="text-[10px] text-slate-400 uppercase font-semibold">Default Destination</span>
@@ -1652,140 +1635,98 @@ export function TripsView({
 
       {/* Split Operations console */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left Column: Dispatches Feed (Span 5) */}
-        <div className={`bg-white rounded-2xl border border-slate-100 shadow-xs lg:col-span-5 h-[650px] flex-col overflow-hidden ${mobileShowDetails ? "hidden lg:flex" : "flex"}`} id="trips-list-panel">
-          <div className="p-4 border-b border-slate-100 shrink-0 space-y-3 bg-slate-50/30">
-            {/* Search Input */}
+        {/* Left Column: Dispatches List (Span 5) */}
+        <div className={`bg-white rounded-2xl border border-slate-100 shadow-xs lg:col-span-5 h-[calc(100vh-140px)] lg:h-[650px] min-h-[400px] flex-col overflow-hidden ${mobileShowDetails ? "hidden lg:flex" : "flex"}`} id="trips-list-panel">
+          {/* List Search & Filter Header */}
+          <div className="p-4 border-b border-slate-100 space-y-3 shrink-0 bg-slate-50/50">
             <div className="relative">
-              <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
               <input
                 type="text"
                 placeholder="Search customer, trip ID, route..."
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:bg-white focus:border-brand-500 focus:outline-none transition shadow-2xs text-slate-700"
-                id="trip-search-input"
+                className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-brand-500 font-medium shadow-3xs"
               />
             </div>
 
-            {/* Date Range Filters */}
-            <div className="flex flex-col gap-2 pt-1 border-t border-slate-100/60 font-sans">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5 text-slate-400" /> Date Range Filter
-                </span>
-                {(startDateFilter || endDateFilter || searchTerm) && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSearchTerm("");
-                      setStartDateFilter("");
-                      setEndDateFilter("");
-                      showToast("All filters cleared", "info");
-                    }}
-                    className="text-[10px] font-semibold text-brand-600 hover:text-brand-700 transition cursor-pointer"
-                    id="clear-filters-btn"
-                  >
-                    Clear Filters
-                  </button>
-                )}
-              </div>
+            {/* Date Range Filter */}
+            <div className="space-y-1.5 pt-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                <Calendar className="w-3 h-3 text-brand-500" /> Date Range Filter
+              </span>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-[9px] font-semibold text-slate-500 mb-1">From Date</label>
+                  <label className="block text-[9px] font-semibold text-slate-400 uppercase mb-0.5">From Date</label>
                   <input
                     type="date"
                     value={startDateFilter}
                     onChange={e => setStartDateFilter(e.target.value)}
-                    className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-600 focus:border-brand-500 focus:outline-none"
-                    id="trip-start-date-filter"
+                    className="w-full px-2 py-1 bg-white border border-slate-200 rounded-lg text-[11px] font-mono text-slate-700 focus:outline-none focus:border-brand-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-[9px] font-semibold text-slate-500 mb-1">To Date</label>
+                  <label className="block text-[9px] font-semibold text-slate-400 uppercase mb-0.5">To Date</label>
                   <input
                     type="date"
                     value={endDateFilter}
                     onChange={e => setEndDateFilter(e.target.value)}
-                    className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-600 focus:border-brand-500 focus:outline-none"
-                    id="trip-end-date-filter"
+                    className="w-full px-2 py-1 bg-white border border-slate-200 rounded-lg text-[11px] font-mono text-slate-700 focus:outline-none focus:border-brand-500"
                   />
                 </div>
               </div>
             </div>
-          </div>
 
-          {/* Live Operational Status Tabs Section */}
-          <div className="flex bg-slate-100/80 p-1 rounded-lg gap-1 mx-4 my-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                setTripsTab("running");
-                const active = filteredTrips.find(t => t.status === TripStatus.STARTED || t.status === TripStatus.RUNNING);
-                if (active) setSelectedTripId(active.id);
-              }}
-              className={`flex-1 py-1.5 px-2 text-center text-xs font-bold rounded-md transition duration-150 flex items-center justify-center gap-1.5 cursor-pointer ${
-                tripsTab === "running"
-                  ? "bg-white text-brand-600 shadow-2xs"
-                  : "text-slate-500 hover:text-slate-700 hover:bg-white/40"
-              }`}
-            >
-              <Clock className="w-3.5 h-3.5" />
-              <span>Running</span>
-              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
-                tripsTab === "running" ? "bg-brand-50 text-brand-600" : "bg-slate-200 text-slate-600"
-              }`}>
-                {filteredTrips.filter(t => t.status === TripStatus.STARTED || t.status === TripStatus.RUNNING).length}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setTripsTab("completed");
-                const active = filteredTrips.find(t => t.status === TripStatus.COMPLETED);
-                if (active) setSelectedTripId(active.id);
-              }}
-              className={`flex-1 py-1.5 px-2 text-center text-xs font-bold rounded-md transition duration-150 flex items-center justify-center gap-1.5 cursor-pointer ${
-                tripsTab === "completed"
-                  ? "bg-white text-emerald-600 shadow-2xs"
-                  : "text-slate-500 hover:text-slate-700 hover:bg-white/40"
-              }`}
-            >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>Completed</span>
-              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
-                tripsTab === "completed" ? "bg-emerald-50 text-emerald-600" : "bg-slate-200 text-slate-600"
-              }`}>
-                {filteredTrips.filter(t => t.status === TripStatus.COMPLETED).length}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setTripsTab("all");
-                if (filteredTrips.length > 0) setSelectedTripId(filteredTrips[0].id);
-              }}
-              className={`flex-1 py-1.5 px-2 text-center text-xs font-bold rounded-md transition duration-150 flex items-center justify-center gap-1.5 cursor-pointer ${
-                tripsTab === "all"
-                  ? "bg-white text-slate-700 shadow-2xs"
-                  : "text-slate-500 hover:text-slate-700 hover:bg-white/40"
-              }`}
-            >
-              <span>All</span>
-              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
-                tripsTab === "all" ? "bg-slate-200 text-slate-700" : "bg-slate-200 text-slate-600"
-              }`}>
-                {filteredTrips.length}
-              </span>
-            </button>
+            {/* Filter Tabs */}
+            <div className="flex bg-slate-100/80 p-1 rounded-xl gap-1 text-xs">
+              <button
+                onClick={() => setTripsTab("running")}
+                className={`flex-1 py-1.5 rounded-lg font-bold transition-all text-center flex items-center justify-center gap-1.5 cursor-pointer ${
+                  tripsTab === "running" ? "bg-white text-slate-800 shadow-2xs" : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                <Clock className="w-3.5 h-3.5 text-brand-500" />
+                <span>Running</span>
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-100 text-slate-600 font-mono font-bold">
+                  {filteredTrips.filter(t => t.status === TripStatus.STARTED || t.status === TripStatus.RUNNING).length}
+                </span>
+              </button>
+              <button
+                onClick={() => setTripsTab("completed")}
+                className={`flex-1 py-1.5 rounded-lg font-bold transition-all text-center flex items-center justify-center gap-1.5 cursor-pointer ${
+                  tripsTab === "completed" ? "bg-white text-slate-800 shadow-2xs" : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                <span>Completed</span>
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-100 text-slate-600 font-mono font-bold">
+                  {filteredTrips.filter(t => t.status === TripStatus.COMPLETED).length}
+                </span>
+              </button>
+              <button
+                onClick={() => setTripsTab("all")}
+                className={`flex-1 py-1.5 rounded-lg font-bold transition-all text-center flex items-center justify-center gap-1.5 cursor-pointer ${
+                  tripsTab === "all" ? "bg-white text-slate-800 shadow-2xs" : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                <span>All</span>
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-100 text-slate-600 font-mono font-bold">
+                  {filteredTrips.length}
+                </span>
+              </button>
+            </div>
           </div>
 
           {/* Trips list */}
           <div className="flex-1 overflow-y-auto p-2 space-y-2">
             {(() => {
-              const displayedTrips = filteredTrips.filter(t => {
+              const sortedTrips = [...filteredTrips].sort((a, b) => {
+                const numA = parseInt(a.id.replace(/\D/g, "") || "0", 10);
+                const numB = parseInt(b.id.replace(/\D/g, "") || "0", 10);
+                return numB - numA; // Series order (newest trip number first)
+              });
+
+              const displayedTrips = sortedTrips.filter(t => {
                 if (tripsTab === "running") {
                   return t.status === TripStatus.STARTED || t.status === TripStatus.RUNNING;
                 }
@@ -1842,7 +1783,7 @@ export function TripsView({
 
                     <div className="flex justify-between items-center mt-4 text-[10px] text-slate-400 border-t border-slate-100/50 pt-2 font-mono">
                       <span>{trip.startDate} to {trip.endDate}</span>
-                      <span className="font-semibold text-slate-600">{trip.vehicleNumber}</span>
+                      <span className="font-semibold text-slate-600">{trip.vehicleModel || "Vehicle Unit"}</span>
                     </div>
                   </div>
                 );
@@ -1852,7 +1793,7 @@ export function TripsView({
         </div>
 
         {/* Right Column: Dynamic Timeline & Dispatch Details Workspace (Span 7) */}
-        <div className={`bg-white rounded-2xl border border-slate-100 shadow-xs lg:col-span-7 h-[650px] flex-col overflow-hidden ${!mobileShowDetails ? "hidden lg:flex" : "flex"}`} id="trip-details-panel">
+        <div className={`bg-white rounded-2xl border border-slate-100 shadow-xs lg:col-span-7 h-[calc(100vh-140px)] lg:h-[650px] min-h-[450px] flex-col overflow-hidden ${!mobileShowDetails ? "hidden lg:flex" : "flex"}`} id="trip-details-panel">
           {/* Mobile Back Header */}
           <div className="lg:hidden p-3 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800 shrink-0">
             <button
@@ -1871,9 +1812,9 @@ export function TripsView({
             )}
           </div>
           {selectedTrip ? (
-            <div className="flex-1 flex flex-col h-full">
+            <div className="flex-1 flex flex-col h-full min-h-0 overflow-y-auto pb-24">
               {/* Header Details */}
-              <div className="p-6 border-b border-slate-100 bg-slate-50/50 shrink-0 space-y-4">
+              <div className="p-4 sm:p-6 border-b border-slate-100 bg-slate-50/50 shrink-0 space-y-4">
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                   <div>
                     <span className="text-[10px] font-mono font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded">
@@ -1887,10 +1828,14 @@ export function TripsView({
                         const cust = db.customers.find(c => c.id === selectedTrip.customerId || (selectedTrip.customerName && c.name.toLowerCase().trim() === selectedTrip.customerName.toLowerCase().trim()));
                         const phone = selectedTrip.customerPhone || cust?.phone;
                         return phone ? (
-                          <span className="inline-flex items-center gap-1 text-xs font-mono font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200/80">
-                            <Phone className="w-3.5 h-3.5 text-brand-500" />
-                            {phone}
-                          </span>
+                          <a
+                            href={`tel:${phone}`}
+                            className="inline-flex items-center gap-1.5 text-xs font-mono font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-lg border border-emerald-200 transition cursor-pointer"
+                            title={`Click to call customer ${selectedTrip.customerName}`}
+                          >
+                            <PhoneCall className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Call {phone}</span>
+                          </a>
                         ) : null;
                       })()}
                     </div>
@@ -1951,8 +1896,17 @@ export function TripsView({
                     </span>
                     <div className="min-w-0">
                       <p className="text-[9px] font-semibold text-slate-400 uppercase">Assigned Fleet Crew</p>
-                      <p className="text-xs font-bold text-slate-700 truncate">{selectedTrip.driverName || "Driver allocated"}</p>
-                      <p className="text-[10px] text-slate-500 font-mono">{selectedTrip.driverPhone || "Contact details"}</p>
+                      {selectedTrip.driverPhone ? (
+                        <a
+                          href={`tel:${selectedTrip.driverPhone}`}
+                          className="inline-flex items-center gap-1 text-[10px] font-mono font-bold text-emerald-700 hover:text-emerald-800 hover:underline mt-0.5"
+                          title={`Click to call driver ${selectedTrip.driverName || ""}`}
+                        >
+                          <PhoneCall className="w-3 h-3 text-emerald-600" /> Call {selectedTrip.driverPhone}
+                        </a>
+                      ) : (
+                        <p className="text-[10px] text-slate-500 font-mono">Contact details</p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -2021,13 +1975,13 @@ export function TripsView({
                         </button>
                         {(() => {
                           const cust = db.customers.find(c => c.id === selectedTrip.customerId || (selectedTrip.customerName && c.name.toLowerCase().trim() === selectedTrip.customerName.toLowerCase().trim()));
+                          const targetInv = db.invoices.find(i => i.tripId === selectedTrip.id || i.tripNumber === selectedTrip.id);
                           const tripPayments = db.payments.filter(p => 
                             p.tripNumber === selectedTrip.id || 
-                            (selectedTrip.customerName && p.customerName.toLowerCase().trim() === selectedTrip.customerName.toLowerCase().trim()) ||
-                            (selectedTrip.customerId && (p.tripNumber === `CUST-${selectedTrip.customerId}` || p.tripNumber === `TRIP-${selectedTrip.customerId}`))
+                            (targetInv && p.invoiceId === targetInv.id)
                           );
                           const sumPayments = tripPayments.reduce((sum, payment) => sum + payment.amount, 0);
-                          const totalPaid = Math.max(selectedTrip.advancePaid || 0, cust?.advanceAmount || 0, sumPayments);
+                          const totalPaid = Math.max(selectedTrip.advancePaid || 0, sumPayments > 0 ? sumPayments : (cust?.advanceAmount || 0));
                           return (
                             <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
                               totalPaid > 0 ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"
@@ -2041,13 +1995,13 @@ export function TripsView({
                     <p className="font-bold text-emerald-700 text-base mt-0.5">
                       ₹{(() => {
                         const cust = db.customers.find(c => c.id === selectedTrip.customerId || (selectedTrip.customerName && c.name.toLowerCase().trim() === selectedTrip.customerName.toLowerCase().trim()));
+                        const targetInv = db.invoices.find(i => i.tripId === selectedTrip.id || i.tripNumber === selectedTrip.id);
                         const tripPayments = db.payments.filter(p => 
                           p.tripNumber === selectedTrip.id || 
-                          (selectedTrip.customerName && p.customerName.toLowerCase().trim() === selectedTrip.customerName.toLowerCase().trim()) ||
-                          (selectedTrip.customerId && (p.tripNumber === `CUST-${selectedTrip.customerId}` || p.tripNumber === `TRIP-${selectedTrip.customerId}`))
+                          (targetInv && p.invoiceId === targetInv.id)
                         );
                         const sumPayments = tripPayments.reduce((sum, payment) => sum + payment.amount, 0);
-                        const totalPaid = Math.max(selectedTrip.advancePaid || 0, cust?.advanceAmount || 0, sumPayments);
+                        const totalPaid = Math.max(selectedTrip.advancePaid || 0, sumPayments > 0 ? sumPayments : (cust?.advanceAmount || 0));
                         return totalPaid.toLocaleString("en-IN");
                       })()}
                     </p>
@@ -2056,7 +2010,7 @@ export function TripsView({
               </div>
 
               {/* Comprehensive Trip Details & Information Sheet */}
-              <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/20">
+              <div className="p-4 sm:p-6 space-y-6 bg-slate-50/20">
                 {/* Section 1: Passenger Information */}
                 <div className="space-y-3">
                   <h4 className="text-xs font-bold font-display uppercase tracking-wider text-slate-400">Passenger Information</h4>
@@ -2071,19 +2025,39 @@ export function TripsView({
                       </div>
                     </div>
 
-                    <div className="bg-white p-3.5 rounded-xl border border-slate-100 shadow-2xs flex items-center gap-3">
-                      <span className="p-2 bg-brand-50 text-brand-600 rounded-lg">
-                        <Phone className="w-4 h-4" />
-                      </span>
-                      <div>
-                        <p className="text-[10px] font-semibold text-slate-400 uppercase">Customer Contact</p>
-                        <p className="text-xs font-bold text-slate-800 font-mono">
+                    <div className="bg-white p-3.5 rounded-xl border border-slate-100 shadow-2xs flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <span className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
+                          <PhoneCall className="w-4 h-4" />
+                        </span>
+                        <div>
+                          <p className="text-[10px] font-semibold text-slate-400 uppercase">Customer Contact</p>
                           {(() => {
                             const cust = db.customers.find(c => c.id === selectedTrip.customerId || (selectedTrip.customerName && c.name.toLowerCase().trim() === selectedTrip.customerName.toLowerCase().trim()));
-                            return selectedTrip.customerPhone || cust?.phone || "Not Provided";
+                            const phone = selectedTrip.customerPhone || cust?.phone;
+                            return phone ? (
+                              <a href={`tel:${phone}`} className="text-xs font-bold text-emerald-700 font-mono hover:underline block">
+                                {phone}
+                              </a>
+                            ) : (
+                              <p className="text-xs font-bold text-slate-800 font-mono">Not Provided</p>
+                            );
                           })()}
-                        </p>
+                        </div>
                       </div>
+                      {(() => {
+                        const cust = db.customers.find(c => c.id === selectedTrip.customerId || (selectedTrip.customerName && c.name.toLowerCase().trim() === selectedTrip.customerName.toLowerCase().trim()));
+                        const phone = selectedTrip.customerPhone || cust?.phone;
+                        return phone ? (
+                          <a
+                            href={`tel:${phone}`}
+                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg transition shadow-xs flex items-center gap-1 cursor-pointer shrink-0"
+                            title="Call Customer Now"
+                          >
+                            <PhoneCall className="w-3 h-3" /> Call
+                          </a>
+                        ) : null;
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -2100,7 +2074,7 @@ export function TripsView({
                           <span>{selectedTrip.startDate ? new Date(selectedTrip.startDate).toLocaleDateString("en-IN", { day: 'numeric', month: 'short', year: 'numeric' }) : "N/A"}</span>
                           {selectedTrip.pickupTime && (
                             <span className="text-brand-600 font-mono font-bold px-1.5 py-0.5 bg-brand-50 rounded border border-brand-100/50 text-[10px] flex items-center gap-0.5">
-                              ⏰ {selectedTrip.pickupTime}
+                              ⏰ {format12HourTime(selectedTrip.pickupTime)}
                             </span>
                           )}
                         </p>
@@ -2114,7 +2088,7 @@ export function TripsView({
                           <span>{selectedTrip.endDate ? new Date(selectedTrip.endDate).toLocaleDateString("en-IN", { day: 'numeric', month: 'short', year: 'numeric' }) : "N/A"}</span>
                           {selectedTrip.closingTime && (
                             <span className="text-rose-600 font-mono font-bold px-1.5 py-0.5 bg-rose-50 rounded border border-rose-100/50 text-[10px] flex items-center gap-0.5">
-                              ⏰ {selectedTrip.closingTime}
+                              ⏰ {format12HourTime(selectedTrip.closingTime)}
                             </span>
                           )}
                         </p>
@@ -2302,13 +2276,14 @@ export function TripsView({
       
       {/* Trip Completion Reconciliation Modal */}
       {showCompletionModal && selectedTrip && (() => {
-        const customer = db.customers.find(c => c.id === selectedTrip.customerId);
+        const customer = db.customers.find(c => c.id === selectedTrip.customerId || (selectedTrip.customerName && c.name.toLowerCase().trim() === selectedTrip.customerName.toLowerCase().trim()));
         const perKmRate = customer?.perKmRate || 12;
         const driverBataRate = customer?.driverBata || 500;
+        const engageAmount = Number(completionData.engageAmount || 0);
 
         const kmCost = completionData.totalKm * perKmRate;
         const bataCost = completionData.totalBata * driverBataRate;
-        const subtotal = kmCost + bataCost + completionData.toll;
+        const subtotal = engageAmount + kmCost + bataCost + completionData.toll;
         const totalTripCost = subtotal;
         
         // Calculate total advance from actual payment entries
@@ -2356,8 +2331,40 @@ export function TripsView({
                 {/* Form Content */}
                 <div className="p-6 space-y-4">
                   <div className="grid grid-cols-2 gap-4">
+                    {/* Engage Amount Input */}
+                    <div className="space-y-1 col-span-2 sm:col-span-1">
+                      <label className="text-xs font-semibold text-slate-500">
+                        Engage Amount (Base Fare)
+                      </label>
+                      <div className="relative rounded-lg shadow-2xs">
+                        <span className="absolute left-3 top-2.5 text-[10px] font-bold text-slate-400">₹</span>
+                        <input
+                          type="number"
+                          min="0"
+                          required
+                          value={completionData.engageAmount}
+                          onChange={e => {
+                            const val = Number(e.target.value);
+                            const updatedKmCost = completionData.totalKm * perKmRate;
+                            const updatedBataCost = completionData.totalBata * driverBataRate;
+                            const updatedSubtotal = val + updatedKmCost + updatedBataCost + completionData.toll;
+                            const updatedTotal = updatedSubtotal;
+                            const updatedOutstanding = Math.max(0, updatedTotal - totalAdvancePaid);
+                            setCompletionData(prev => ({
+                              ...prev,
+                              engageAmount: val,
+                              amountTook: updatedOutstanding
+                            }));
+                          }}
+                          className="w-full pl-6 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:outline-none focus:border-brand-500 font-mono"
+                          placeholder="e.g. 1000"
+                        />
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-medium">Customer Booking Engage Rate</span>
+                    </div>
+
                     {/* Total KM */}
-                    <div className="space-y-1">
+                    <div className="space-y-1 col-span-2 sm:col-span-1">
                       <label className="text-xs font-semibold text-slate-500">
                         Total Kilometers Run
                       </label>
@@ -2371,7 +2378,7 @@ export function TripsView({
                             const val = Number(e.target.value);
                             const updatedKmCost = val * perKmRate;
                             const updatedBataCost = completionData.totalBata * driverBataRate;
-                            const updatedSubtotal = updatedKmCost + updatedBataCost + completionData.toll;
+                            const updatedSubtotal = engageAmount + updatedKmCost + updatedBataCost + completionData.toll;
                             const updatedTotal = updatedSubtotal;
                             const updatedOutstanding = Math.max(0, updatedTotal - totalAdvancePaid);
                             setCompletionData(prev => ({
@@ -2404,7 +2411,7 @@ export function TripsView({
                             const val = Number(e.target.value);
                             const updatedKmCost = completionData.totalKm * perKmRate;
                             const updatedBataCost = val * driverBataRate;
-                            const updatedSubtotal = updatedKmCost + updatedBataCost + completionData.toll;
+                            const updatedSubtotal = engageAmount + updatedKmCost + updatedBataCost + completionData.toll;
                             const updatedTotal = updatedSubtotal;
                             const updatedOutstanding = Math.max(0, updatedTotal - totalAdvancePaid);
                             setCompletionData(prev => ({
@@ -2437,7 +2444,7 @@ export function TripsView({
                             const val = Number(e.target.value);
                             const updatedKmCost = completionData.totalKm * perKmRate;
                             const updatedBataCost = completionData.totalBata * driverBataRate;
-                            const updatedSubtotal = updatedKmCost + updatedBataCost + val;
+                            const updatedSubtotal = engageAmount + updatedKmCost + updatedBataCost + val;
                             const updatedTotal = updatedSubtotal;
                             const updatedOutstanding = Math.max(0, updatedTotal - totalAdvancePaid);
                             setCompletionData(prev => ({
@@ -2454,7 +2461,7 @@ export function TripsView({
                     </div>
 
                     {/* Payment Method */}
-                    <div className="space-y-1">
+                    <div className="space-y-1 col-span-2">
                       <label className="text-xs font-semibold text-slate-500">
                         Payment Mode Collected
                       </label>
@@ -2480,6 +2487,12 @@ export function TripsView({
                     </div>
                     
                     <div className="space-y-1.5 text-[11px] text-slate-600">
+                      {engageAmount > 0 && (
+                        <div className="flex justify-between font-semibold text-brand-700 bg-brand-50/70 p-1.5 rounded-lg border border-brand-100/60">
+                          <span>Engage Amount (Fixed Base Package)</span>
+                          <span className="font-mono font-bold">₹{engageAmount.toLocaleString("en-IN")}</span>
+                        </div>
+                      )}
                       <div className="flex justify-between">
                         <span>KM Cost ({completionData.totalKm} km × ₹{perKmRate})</span>
                         <span className="font-medium text-slate-700">₹{kmCost.toLocaleString("en-IN")}</span>

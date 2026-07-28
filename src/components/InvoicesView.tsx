@@ -1029,7 +1029,6 @@ export function InvoicesView({ db, onUpdateDb }: InvoicesViewProps) {
                     <h4 className="font-black text-[#e11d48] text-xs uppercase tracking-wider mb-2">Transportation Details:</h4>
                     <div className="text-slate-700 space-y-1.5 pt-1">
                       <p className="font-bold text-slate-800 text-xs">{vehicleModel}</p>
-                      <p className="font-mono text-xs text-slate-600 font-bold">{vehicleNumber}</p>
                       {associatedTrip && (
                         <div className="pt-2 text-[10px] text-slate-500 space-y-0.5">
                           <p>• Route: <span className="font-medium text-slate-700">{associatedTrip.pickup} ➔ {associatedTrip.drop}</span></p>

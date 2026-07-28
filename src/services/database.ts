@@ -1,15 +1,26 @@
 import { supabase } from '../lib/supabaseClient';
-import type { ErpDatabase, Customer, Trip, Driver, Vehicle, Invoice, Payment, Expense, Lead, Employee, SystemNotification } from '../types';
+import { UserRole, type ErpDatabase, type Customer, type Trip, type Driver, type Vehicle, type Invoice, type Payment, type Expense, type Lead, type Employee, type SystemNotification } from '../types';
 
 // Helper function to convert camelCase to snake_case
 function toSnakeCase(str: string): string {
   // Special handling for fields with numbers and acronyms
   const specialCases: Record<string, string> = {
+    'assignedRateEngage': 'assigned_rate_engage',
+    'perKmRate': 'per_km_rate',
+    'driverBata': 'driver_bata',
+    'advanceAmount': 'advance_amount',
+    'profitPerKm': 'profit_per_km',
+    'profitBata': 'profit_bata',
+    'profitEngage': 'profit_engage',
+    'pickupLocation': 'pickup_location',
+    'pickupTime': 'pickup_time',
+    'visitingPlaces': 'visiting_places',
+    'startDate': 'start_date',
+    'endDate': 'end_date',
     'perKmAcBelow350': 'per_km_ac_below_350',
     'perKmNonAcBelow350': 'per_km_non_ac_below_350',
     'perKmAcAbove350': 'per_km_ac_above_350',
     'perKmNonAcAbove350': 'per_km_non_ac_above_350',
-    'driverBata': 'driver_bata',
     'engage': 'engage',
     'companyGST': 'company_gst',
     'customerGST': 'customer_gst',
@@ -43,11 +54,22 @@ function convertKeysToSnakeCase(obj: any): any {
 function toCamelCase(str: string): string {
   // Special handling for fields with numbers and acronyms - reverse mapping
   const specialCases: Record<string, string> = {
+    'assigned_rate_engage': 'assignedRateEngage',
+    'per_km_rate': 'perKmRate',
+    'driver_bata': 'driverBata',
+    'advance_amount': 'advanceAmount',
+    'profit_per_km': 'profitPerKm',
+    'profit_bata': 'profitBata',
+    'profit_engage': 'profitEngage',
+    'pickup_location': 'pickupLocation',
+    'pickup_time': 'pickupTime',
+    'visiting_places': 'visitingPlaces',
+    'start_date': 'startDate',
+    'end_date': 'endDate',
     'per_km_ac_below_350': 'perKmAcBelow350',
     'per_km_non_ac_below_350': 'perKmNonAcBelow350',
     'per_km_ac_above_350': 'perKmAcAbove350',
     'per_km_non_ac_above_350': 'perKmNonAcAbove350',
-    'driver_bata': 'driverBata',
     'engage': 'engage',
     'company_gst': 'companyGST',
     'customer_gst': 'customerGST',
@@ -978,10 +1000,10 @@ export async function loadDatabase(): Promise<ErpDatabase | null> {
         name: 'Admin User',
         email: 'admin@eagletravels.com',
         phone: '+91 98860 12345',
-        role: 'Owner',
+        role: UserRole.OWNER,
         salary: 0,
         joining_date: new Date().toISOString().split('T')[0],
-        status: 'Active',
+        status: 'Active' as const,
         avatar_url: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&q=80'
       };
       
@@ -1102,8 +1124,9 @@ export async function loadDatabase(): Promise<ErpDatabase | null> {
 // REAL-TIME SUPABASE SUBSCRIPTIONS
 // ============================================
 export function subscribeToRealtime(onChange: () => void) {
+  const channelName = `erp-realtime-sync-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
   const channel = supabase
-    .channel('erp-realtime-sync')
+    .channel(channelName)
     .on(
       'postgres_changes',
       { event: '*', schema: 'public' },

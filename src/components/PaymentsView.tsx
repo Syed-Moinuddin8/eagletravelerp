@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useToasts } from "./Toast";
+import { exportPaymentsToCsv } from "../utils/csvExport";
 import {
   ErpDatabase,
   Payment,
-  Invoice
+  Invoice,
+  TripStatus
 } from "../types";
 import {
   Search,
@@ -23,9 +25,11 @@ import {
   X,
   User,
   Car,
+  PhoneCall,
   MapPin,
   TrendingUp,
   Receipt,
+  Trash2,
   FileText
 } from "lucide-react";
 
@@ -94,6 +98,11 @@ export function PaymentsView({ db, onUpdateDb }: PaymentsViewProps) {
   // Calculate outstanding from trips (Payment Ledger) - Only for completed trips with unpaid balances
   const totalOutstanding = useMemo(() => {
     return db.trips.reduce((acc, trip) => {
+      // Only count COMPLETED trips for outstanding receivables
+      if (trip.status !== "Completed") {
+        return acc;
+      }
+      
       // Skip if trip doesn't have a total fare or is already marked as paid
       if (!trip.totalFare || trip.totalFare === 0 || trip.paymentStatus === "Paid") {
         return acc;
@@ -219,25 +228,131 @@ export function PaymentsView({ db, onUpdateDb }: PaymentsViewProps) {
     (pay.transactionId && pay.transactionId.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
-  // Filter trips that have outstanding balance (memoized for reactivity)
-  const outstandingTrips = useMemo(() => {
+  // Filter all completed trips for the Trip Financial Ledger table
+  const completedTrips = useMemo(() => {
     return db.trips
+      .filter(trip => trip.status === TripStatus.COMPLETED)
       .map(trip => {
         const tripPayments = db.payments.filter(p => p.tripNumber === trip.id);
         const totalPaid = tripPayments.reduce((sum, p) => sum + p.amount, 0);
         const balance = Math.max(0, (trip.totalFare || 0) - totalPaid);
         return { ...trip, balanceDue: balance, totalPaid };
-      })
-      .filter(trip => {
-        // Only show trips that:
-        // 1. Have a total fare > 0
-        // 2. Have an outstanding balance > 0
-        // 3. Are NOT marked as "Paid"
-        return trip.totalFare > 0 && 
-               trip.balanceDue > 0 && 
-               trip.paymentStatus !== "Paid";
       });
   }, [db.trips, db.payments]);
+
+  // Filter trips that have outstanding balance for Collectable Receivables & Record Payment Dropdown
+  const outstandingTrips = useMemo(() => {
+    return completedTrips.filter(trip => trip.balanceDue > 0 && trip.paymentStatus !== "Paid");
+  }, [completedTrips]);
+
+  // Handle Delete Payment Entry
+  const handleDeletePayment = (paymentId: string) => {
+    const paymentToDelete = db.payments.find(p => p.id === paymentId);
+    if (!paymentToDelete) return;
+
+    if (!window.confirm(`Are you sure you want to delete payment receipt ${paymentId} (₹${paymentToDelete.amount.toLocaleString("en-IN")})?`)) {
+      return;
+    }
+
+    // 1. Filter out payment
+    const updatedPayments = db.payments.filter(p => p.id !== paymentId);
+
+    // 2. Update trip advance & paymentStatus
+    const updatedTrips = db.trips.map(trip => {
+      if (trip.id === paymentToDelete.tripNumber) {
+        const remainingPayments = updatedPayments.filter(p => p.tripNumber === trip.id);
+        const newAdvancePaid = remainingPayments.reduce((sum, p) => sum + p.amount, 0);
+        const isFullyPaid = (trip.totalFare - newAdvancePaid) <= 0 && trip.totalFare > 0;
+        const paymentStatus: "Pending" | "Partial" | "Paid" = isFullyPaid ? "Paid" : (newAdvancePaid > 0 ? "Partial" : "Pending");
+
+        return {
+          ...trip,
+          advancePaid: newAdvancePaid,
+          paymentStatus
+        };
+      }
+      return trip;
+    });
+
+    // 3. Update invoice if linked
+    const updatedInvoices = db.invoices.map(inv => {
+      if (inv.id === paymentToDelete.invoiceId || inv.tripId === paymentToDelete.tripNumber || inv.tripNumber === paymentToDelete.tripNumber) {
+        const remainingPayments = updatedPayments.filter(p => p.invoiceId === inv.id || p.tripNumber === inv.tripId || p.tripNumber === inv.tripNumber);
+        const newPaid = remainingPayments.reduce((sum, p) => sum + p.amount, 0);
+        const newBalance = Math.max(0, inv.totalAmount - newPaid);
+        const status = newBalance <= 0 && inv.totalAmount > 0 ? ("Paid" as const) : (newPaid > 0 ? ("Partial" as const) : ("Pending" as const));
+
+        return {
+          ...inv,
+          amountPaid: newPaid,
+          balanceDue: newBalance,
+          status
+        };
+      }
+      return inv;
+    });
+
+    // 4. Create Notification
+    const newNotification = {
+      id: `n-${Date.now()}`,
+      title: `Payment Receipt Deleted`,
+      message: `Deleted payment receipt ${paymentId} (₹${paymentToDelete.amount.toLocaleString("en-IN")}) for ${paymentToDelete.customerName}.`,
+      type: "info" as const,
+      timestamp: new Date().toISOString(),
+      read: false
+    };
+
+    onUpdateDb({
+      ...db,
+      payments: updatedPayments,
+      trips: updatedTrips,
+      invoices: updatedInvoices,
+      notifications: [newNotification, ...db.notifications]
+    });
+
+    if (selectedPayment?.id === paymentId) {
+      setSelectedPayment(null);
+    }
+
+    showToast(`Payment receipt ${paymentId} deleted. Ledger updated.`, "info");
+  };
+
+  // Handle Delete Trip from Ledger
+  const handleDeleteTripLedger = (tripId: string) => {
+    const trip = db.trips.find(t => t.id === tripId);
+    if (!trip) return;
+
+    if (!window.confirm(`Are you sure you want to delete trip ${tripId} (${trip.customerName}) from the payment ledger?`)) {
+      return;
+    }
+
+    const updatedTrips = db.trips.filter(t => t.id !== tripId);
+    const updatedPayments = db.payments.filter(p => p.tripNumber !== tripId);
+    const updatedInvoices = db.invoices.filter(i => i.tripId !== tripId && i.tripNumber !== tripId);
+
+    const newNotification = {
+      id: `n-${Date.now()}`,
+      title: `Trip Ledger Record Deleted`,
+      message: `Trip ${tripId} for ${trip.customerName} and its payment records were deleted.`,
+      type: "warning" as const,
+      timestamp: new Date().toISOString(),
+      read: false
+    };
+
+    onUpdateDb({
+      ...db,
+      trips: updatedTrips,
+      payments: updatedPayments,
+      invoices: updatedInvoices,
+      notifications: [newNotification, ...db.notifications]
+    });
+
+    if (selectedTripForDetails?.id === tripId) {
+      setShowTripDetailsModal(false);
+    }
+
+    showToast(`Trip ${tripId} deleted from ledger.`, "info");
+  };
 
   // Handle Recording Payment
   const handleRecordPayment = (e: React.FormEvent) => {
@@ -477,13 +592,23 @@ export function PaymentsView({ db, onUpdateDb }: PaymentsViewProps) {
           <h2 className="text-2xl font-bold font-display text-slate-800">Financial Ledger & Receipts</h2>
           <p className="text-sm text-slate-500">Record customer advances, audit outstanding balances, and dispatch UPI payment links.</p>
         </div>
-        <button
-          onClick={() => setShowAddForm(!showAddForm)}
-          className="flex items-center gap-1.5 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold rounded-xl shadow-sm transition"
-          id="log-payment-btn"
-        >
-          <Plus className="w-4 h-4" /> Log Payment Receipt
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => exportPaymentsToCsv(db.payments)}
+            className="flex items-center gap-1.5 px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-sm font-semibold rounded-xl shadow-2xs transition cursor-pointer"
+            id="export-payments-csv"
+            title="Export payment ledger receipts to CSV"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600" /> Export CSV
+          </button>
+          <button
+            onClick={() => setShowAddForm(!showAddForm)}
+            className="flex items-center gap-1.5 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold rounded-xl shadow-sm transition cursor-pointer"
+            id="log-payment-btn"
+          >
+            <Plus className="w-4 h-4" /> Log Payment Receipt
+          </button>
+        </div>
       </div>
 
       {/* Financial Stats Cards */}
@@ -642,22 +767,31 @@ export function PaymentsView({ db, onUpdateDb }: PaymentsViewProps) {
                   <th className="p-3">Status</th>
                   <th className="p-3 text-right">Total Amount</th>
                   <th className="p-3 text-right">Profit</th>
+                  <th className="p-3 text-center">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                {db.trips
-                  .filter(trip => {
+                {(() => {
+                  const filtered = completedTrips.filter(trip => {
                     const matchesSearch = trip.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
                                          trip.id.toLowerCase().includes(searchTerm.toLowerCase());
-                    const hasFinancials = (trip.totalFare && trip.totalFare > 0) || 
-                                          (trip.advancePaid && trip.advancePaid > 0) || 
-                                          db.payments.some(p => p.tripNumber === trip.id);
-                    
-                    return matchesSearch && hasFinancials;
-                  })
-                  .map(trip => {
+                    return matchesSearch;
+                  });
+
+                  if (filtered.length === 0) {
+                    return (
+                      <tr>
+                        <td colSpan={6} className="text-center py-12 text-slate-400 text-xs font-semibold">
+                          No completed trip financial records found. Complete a trip in Trips Dispatcher to view its ledger entries here.
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  return filtered.map(trip => {
                     const tripPayments = db.payments.filter(p => p.tripNumber === trip.id);
                     const totalPaidAmount = tripPayments.reduce((sum, p) => sum + p.amount, 0);
+                    const isFullyPaid = trip.paymentStatus === "Paid" || (trip.totalFare > 0 && totalPaidAmount >= trip.totalFare);
                     
                     return (
                       <tr 
@@ -676,11 +810,11 @@ export function PaymentsView({ db, onUpdateDb }: PaymentsViewProps) {
                         </td>
                         <td className="p-3">
                           <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-bold ${
-                            trip.status === "Completed" ? "bg-emerald-50 text-emerald-700" :
-                            trip.status === "Running" ? "bg-blue-50 text-blue-700" :
-                            "bg-amber-50 text-amber-700"
+                            isFullyPaid ? "bg-emerald-50 text-emerald-700 border border-emerald-100" :
+                            totalPaidAmount > 0 ? "bg-blue-50 text-blue-700 border border-blue-100" :
+                            "bg-amber-50 text-amber-700 border border-amber-100"
                           }`}>
-                            {trip.status}
+                            {isFullyPaid ? "✓ Fully Paid" : totalPaidAmount > 0 ? "Partial Paid" : "Pending"}
                           </span>
                           <p className="text-[10px] text-slate-400 mt-0.5">Paid: ₹{(totalPaidAmount || 0).toLocaleString("en-IN")}</p>
                         </td>
@@ -698,9 +832,23 @@ export function PaymentsView({ db, onUpdateDb }: PaymentsViewProps) {
                             <span className="text-slate-400 font-sans">—</span>
                           )}
                         </td>
+                        <td className="p-3 text-center">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteTripLedger(trip.id);
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                            title={`Delete trip ${trip.id} from ledger`}
+                          >
+                            <Trash2 className="w-4 h-4 text-rose-500" />
+                          </button>
+                        </td>
                       </tr>
                     );
-                  })}
+                  });
+                })()}
               </tbody>
             </table>
           </div>
@@ -771,6 +919,73 @@ export function PaymentsView({ db, onUpdateDb }: PaymentsViewProps) {
               ))
             )}
           </div>
+        </div>
+      </div>
+
+      {/* Reconciled Payment Receipts Audit Table */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-xs overflow-hidden p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-md font-bold font-display text-slate-800 flex items-center gap-2">
+              <Receipt className="w-4 h-4 text-emerald-600" /> Reconciled Payment Receipts
+            </h3>
+            <p className="text-xs text-slate-400">All customer advance payments and reconciled collection transactions in the database.</p>
+          </div>
+          <span className="text-xs font-mono font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg">
+            {filteredPayments.length} Receipts
+          </span>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs text-left">
+            <thead className="bg-slate-50 border-b border-slate-100 text-[10px] font-bold text-slate-500 uppercase">
+              <tr>
+                <th className="p-3">Receipt Code</th>
+                <th className="p-3">Date</th>
+                <th className="p-3">Customer Name</th>
+                <th className="p-3">Trip ID</th>
+                <th className="p-3">Mode</th>
+                <th className="p-3 text-right">Amount</th>
+                <th className="p-3 text-center">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+              {filteredPayments.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="text-center py-8 text-slate-400 text-xs font-semibold">
+                    No payment receipt transactions found.
+                  </td>
+                </tr>
+              ) : (
+                filteredPayments.map(payment => (
+                  <tr key={payment.id} className="hover:bg-slate-50/50 transition">
+                    <td className="p-3 font-mono font-bold text-slate-800">{payment.id}</td>
+                    <td className="p-3 text-slate-500">{payment.date}</td>
+                    <td className="p-3 font-semibold text-slate-800">{payment.customerName}</td>
+                    <td className="p-3 font-mono text-brand-600">{payment.tripNumber || "—"}</td>
+                    <td className="p-3">
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold text-[10px] border border-emerald-100">
+                        {payment.paymentMethod}
+                      </span>
+                    </td>
+                    <td className="p-3 text-right font-mono font-bold text-emerald-600">
+                      ₹{payment.amount.toLocaleString("en-IN")}
+                    </td>
+                    <td className="p-3 text-center">
+                      <button
+                        type="button"
+                        onClick={() => handleDeletePayment(payment.id)}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                        title={`Delete payment receipt ${payment.id}`}
+                      >
+                        <Trash2 className="w-4 h-4 text-rose-500" />
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -1176,19 +1391,18 @@ export function PaymentsView({ db, onUpdateDb }: PaymentsViewProps) {
                       <div className="p-3 bg-slate-50/50 rounded-xl border border-slate-100/70 space-y-1.5">
                         <span className="text-[9px] text-slate-400 font-bold uppercase">Assigned Fleet</span>
                         <p className="font-bold text-slate-800">{matchingTrip.vehicleModel || "Unspecified Vehicle"}</p>
-                        {matchingTrip.vehicleNumber && (
-                          <span className="inline-block font-mono font-bold text-[10px] bg-slate-200 text-slate-800 px-1.5 py-0.5 rounded border border-slate-300">
-                            {matchingTrip.vehicleNumber}
-                          </span>
-                        )}
                       </div>
                       <div className="p-3 bg-slate-50/50 rounded-xl border border-slate-100/70 space-y-1.5">
                         <span className="text-[9px] text-slate-400 font-bold uppercase">Assigned Crew Pilot</span>
                         <p className="font-bold text-slate-800">{matchingTrip.driverName || "Self Drive / No Driver"}</p>
                         {matchingTrip.driverPhone && (
-                          <p className="text-slate-500 flex items-center gap-1">
-                            <span>📞</span> {matchingTrip.driverPhone}
-                          </p>
+                          <a
+                            href={`tel:${matchingTrip.driverPhone}`}
+                            className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200 transition cursor-pointer mt-1"
+                            title={`Call driver ${matchingTrip.driverName || ""}`}
+                          >
+                            <PhoneCall className="w-3 h-3 text-emerald-600" /> Call {matchingTrip.driverPhone}
+                          </a>
                         )}
                       </div>
                     </div>
@@ -1316,7 +1530,15 @@ export function PaymentsView({ db, onUpdateDb }: PaymentsViewProps) {
               </div>
 
               {/* Footer */}
-              <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2 shrink-0">
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleDeletePayment(selectedPayment.id)}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-lg text-xs font-bold transition cursor-pointer"
+                  title="Delete this payment receipt from ledger"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Delete Receipt
+                </button>
                 <button
                   type="button"
                   onClick={() => setSelectedPayment(null)}
@@ -1442,9 +1664,10 @@ export function PaymentsView({ db, onUpdateDb }: PaymentsViewProps) {
                       const tollCharges = selectedTripForDetails.tollCharges || 0;
                       
                       // Use stored calculated costs or recalculate
-                      const kmCost = storedKmCost !== undefined ? storedKmCost : (totalKm * perKmRate);
-                      const bataCost = storedBataCost !== undefined ? storedBataCost : (totalBata * driverBataRate);
-                      const calculatedSubtotal = kmCost + bataCost + tollCharges;
+                      const kmCost = storedKmCost != null ? Number(storedKmCost) : (totalKm * perKmRate);
+                      const bataCost = storedBataCost != null ? Number(storedBataCost) : (totalBata * driverBataRate);
+                      const engageAmount = Number(customer?.assignedRateEngage || 0);
+                      const calculatedSubtotal = engageAmount + kmCost + bataCost + tollCharges;
                       
                       return (
                         <div className="space-y-3">
@@ -1460,6 +1683,24 @@ export function PaymentsView({ db, onUpdateDb }: PaymentsViewProps) {
 
                           {/* Individual Cost Calculations */}
                           <div className="bg-white/80 rounded-lg p-4 space-y-3 border border-indigo-100">
+                            {/* Engage Amount */}
+                            {engageAmount > 0 && (
+                              <div className="flex items-center justify-between text-sm">
+                                <div className="flex items-start gap-2">
+                                  <span className="text-indigo-600 font-bold">🎯</span>
+                                  <div>
+                                    <p className="font-semibold text-slate-700">Rate Engage (Base)</p>
+                                    <p className="text-xs text-slate-500 mt-0.5">
+                                      Fixed engagement charge
+                                    </p>
+                                  </div>
+                                </div>
+                                <span className="font-mono font-bold text-slate-800">
+                                  ₹{Number(engageAmount).toLocaleString("en-IN")}
+                                </span>
+                              </div>
+                            )}
+
                             {/* KM Cost */}
                             <div className="flex items-center justify-between text-sm">
                               <div className="flex items-start gap-2">
@@ -1472,7 +1713,7 @@ export function PaymentsView({ db, onUpdateDb }: PaymentsViewProps) {
                                 </div>
                               </div>
                               <span className="font-mono font-bold text-slate-800">
-                                ₹{kmCost.toLocaleString("en-IN")}
+                                ₹{Number(kmCost || 0).toLocaleString("en-IN")}
                               </span>
                             </div>
 
@@ -1488,7 +1729,7 @@ export function PaymentsView({ db, onUpdateDb }: PaymentsViewProps) {
                                 </div>
                               </div>
                               <span className="font-mono font-bold text-slate-800">
-                                ₹{bataCost.toLocaleString("en-IN")}
+                                ₹{Number(bataCost || 0).toLocaleString("en-IN")}
                               </span>
                             </div>
 
@@ -1504,7 +1745,7 @@ export function PaymentsView({ db, onUpdateDb }: PaymentsViewProps) {
                                 </div>
                               </div>
                               <span className="font-mono font-bold text-slate-800">
-                                ₹{tollCharges.toLocaleString("en-IN")}
+                                ₹{Number(tollCharges || 0).toLocaleString("en-IN")}
                               </span>
                             </div>
 
@@ -1512,7 +1753,7 @@ export function PaymentsView({ db, onUpdateDb }: PaymentsViewProps) {
                             <div className="flex items-center justify-between text-base border-t-2 border-indigo-200 pt-3 bg-indigo-50/50 rounded-lg px-3 py-2">
                               <span className="font-bold text-indigo-800">Trip Cost (Subtotal)</span>
                               <span className="font-mono font-bold text-indigo-700 text-lg">
-                                ₹{calculatedSubtotal.toLocaleString("en-IN")}
+                                ₹{Number(calculatedSubtotal || 0).toLocaleString("en-IN")}
                               </span>
                             </div>
                           </div>
@@ -1686,66 +1927,51 @@ export function PaymentsView({ db, onUpdateDb }: PaymentsViewProps) {
                         <div className="space-y-3">
                           {/* Revenue vs Cost Comparison */}
                           <div className="bg-white/80 rounded-lg p-4 space-y-3 border border-emerald-100">
-                            <div className="grid grid-cols-3 gap-2 text-xs font-bold text-center pb-2 border-b border-emerald-100">
+                            <div className="grid grid-cols-2 gap-2 text-xs font-bold pb-2 border-b border-emerald-100">
                               <div className="text-slate-600">Component</div>
-                              <div className="text-blue-600">Revenue (Customer)</div>
-                              <div className="text-rose-600">Cost (Vendor)</div>
+                              <div className="text-blue-600 text-right">Revenue (Customer)</div>
                             </div>
                             
                             {/* Per KM */}
-                            <div className="grid grid-cols-3 gap-2 text-sm items-center">
+                            <div className="grid grid-cols-2 gap-2 text-sm items-center">
                               <div>
                                 <p className="font-semibold text-slate-700">🚗 Per KM</p>
                                 <p className="text-xs text-slate-500">{totalKm} km</p>
                               </div>
-                              <div className="text-center">
+                              <div className="text-right">
                                 <p className="font-mono font-bold text-blue-600">₹{customerKmCharge.toLocaleString("en-IN")}</p>
                                 <p className="text-xs text-slate-500">@₹{customerPerKmRate}/km</p>
-                              </div>
-                              <div className="text-center">
-                                <p className="font-mono font-bold text-rose-600">₹{vendorKmCost.toLocaleString("en-IN")}</p>
-                                <p className="text-xs text-slate-500">@₹{vendorPerKmRate}/km</p>
                               </div>
                             </div>
 
                             {/* Driver Bata */}
-                            <div className="grid grid-cols-3 gap-2 text-sm items-center border-t border-slate-100 pt-3">
+                            <div className="grid grid-cols-2 gap-2 text-sm items-center border-t border-slate-100 pt-3">
                               <div>
                                 <p className="font-semibold text-slate-700">👨‍✈️ Driver Bata</p>
                                 <p className="text-xs text-slate-500">{totalBata} {totalBata === 1 ? "day" : "days"}</p>
                               </div>
-                              <div className="text-center">
+                              <div className="text-right">
                                 <p className="font-mono font-bold text-blue-600">₹{customerBataCharge.toLocaleString("en-IN")}</p>
                                 <p className="text-xs text-slate-500">@₹{customerBataRate}/day</p>
-                              </div>
-                              <div className="text-center">
-                                <p className="font-mono font-bold text-rose-600">₹{vendorBataCost.toLocaleString("en-IN")}</p>
-                                <p className="text-xs text-slate-500">@₹{vendorBataRate}/day</p>
                               </div>
                             </div>
 
                             {/* Toll */}
-                            <div className="grid grid-cols-3 gap-2 text-sm items-center border-t border-slate-100 pt-3">
+                            <div className="grid grid-cols-2 gap-2 text-sm items-center border-t border-slate-100 pt-3">
                               <div>
                                 <p className="font-semibold text-slate-700">🛣️ Toll & Parking</p>
                                 <p className="text-xs text-slate-500">Pass-through</p>
                               </div>
-                              <div className="text-center">
+                              <div className="text-right">
                                 <p className="font-mono font-bold text-blue-600">₹{(selectedTripForDetails.tollCharges || 0).toLocaleString("en-IN")}</p>
-                              </div>
-                              <div className="text-center">
-                                <p className="font-mono font-bold text-rose-600">₹{(selectedTripForDetails.tollCharges || 0).toLocaleString("en-IN")}</p>
                               </div>
                             </div>
 
                             {/* Totals */}
-                            <div className="grid grid-cols-3 gap-2 text-base items-center border-t-2 border-emerald-200 pt-3 bg-emerald-50/50 rounded-lg px-2 py-2">
+                            <div className="grid grid-cols-2 gap-2 text-base items-center border-t-2 border-emerald-200 pt-3 bg-emerald-50/50 rounded-lg px-3 py-2">
                               <div className="font-bold text-slate-800">Total</div>
-                              <div className="text-center">
+                              <div className="text-right">
                                 <p className="font-mono font-bold text-blue-700">₹{totalRevenue.toLocaleString("en-IN")}</p>
-                              </div>
-                              <div className="text-center">
-                                <p className="font-mono font-bold text-rose-700">₹{totalCost.toLocaleString("en-IN")}</p>
                               </div>
                             </div>
                           </div>
@@ -1852,9 +2078,19 @@ export function PaymentsView({ db, onUpdateDb }: PaymentsViewProps) {
                               {payment.transactionId && ` • ${payment.transactionId}`}
                             </p>
                           </div>
-                          <span className="text-sm font-mono font-bold text-emerald-600">
-                            +₹{payment.amount.toLocaleString("en-IN")}
-                          </span>
+                          <div className="flex items-center gap-3">
+                            <span className="text-sm font-mono font-bold text-emerald-600">
+                              +₹{payment.amount.toLocaleString("en-IN")}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleDeletePayment(payment.id)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                              title={`Delete payment ${payment.id}`}
+                            >
+                              <Trash2 className="w-4 h-4 text-rose-500" />
+                            </button>
+                          </div>
                         </div>
                       ))}
                       <div className="flex items-center justify-between pt-3 border-t border-slate-200">

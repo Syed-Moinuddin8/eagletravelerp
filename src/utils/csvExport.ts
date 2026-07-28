@@ -1,4 +1,4 @@
-import { Customer, Driver, Vehicle } from "../types";
+import { Customer, Driver, Vehicle, Payment, Expense } from "../types";
 
 /**
  * Downloads arbitrary rows as a CSV file.
@@ -26,28 +26,54 @@ function downloadCsv(headers: string[], rows: string[][], filename: string) {
  */
 export function exportCustomersToCsv(customers: Customer[]) {
   const headers = [
-    "ID",
+    "Customer ID",
     "Name",
     "Phone",
     "Email",
     "GSTIN",
     "Address",
+    "Vehicle / Model",
+    "Vehicle Provider",
+    "Engage Base Rate (₹)",
+    "Per KM Rate (₹)",
+    "Driver Bata Rate (₹)",
+    "Advance Received (₹)",
+    "Pickup Location",
+    "Pickup Time",
+    "Visiting Places / Itinerary",
+    "Start Date",
+    "End Date",
+    "Passengers",
+    "Booking Status",
     "Notes",
     "Created At"
   ];
 
   const rows = customers.map(c => [
-    c.id,
+    c.id || "",
     c.name || "",
     c.phone || "",
     c.email || "",
     c.gstNumber || "N/A",
     c.address || "",
+    c.vehicle || "N/A",
+    c.vehicleProvider || "N/A",
+    c.assignedRateEngage !== undefined && c.assignedRateEngage !== null ? c.assignedRateEngage.toString() : "0",
+    c.perKmRate !== undefined && c.perKmRate !== null ? c.perKmRate.toString() : "0",
+    c.driverBata !== undefined && c.driverBata !== null ? c.driverBata.toString() : "0",
+    c.advanceAmount !== undefined && c.advanceAmount !== null ? c.advanceAmount.toString() : "0",
+    c.pickupLocation || "",
+    c.pickupTime || "",
+    c.visitingPlaces || "",
+    c.startDate || "",
+    c.endDate || "",
+    c.passengers !== undefined && c.passengers !== null ? c.passengers.toString() : "0",
+    c.bookingStatus || "Confirmed",
     c.notes || "",
     c.createdAt ? new Date(c.createdAt).toLocaleDateString() : ""
   ]);
 
-  downloadCsv(headers, rows, `eagle_travels_customers_${new Date().toISOString().slice(0, 10)}.csv`);
+  downloadCsv(headers, rows, `eagle_travels_customers_directory_${new Date().toISOString().slice(0, 10)}.csv`);
 }
 
 /**
@@ -126,4 +152,60 @@ export function exportVehiclesToCsv(vehicles: Vehicle[]) {
   ]);
 
   downloadCsv(headers, rows, `eagle_travels_fleet_${new Date().toISOString().slice(0, 10)}.csv`);
+}
+
+/**
+ * Export Reconciled Payment Ledger & Receipts to CSV
+ */
+export function exportPaymentsToCsv(payments: Payment[]) {
+  const headers = [
+    "Receipt Code",
+    "Date",
+    "Customer Name",
+    "Trip ID",
+    "Payment Mode",
+    "Amount (₹)",
+    "Transaction Ref ID",
+    "Notes"
+  ];
+
+  const rows = payments.map(p => [
+    p.id || "",
+    p.date || "",
+    p.customerName || "",
+    p.tripNumber || "N/A",
+    p.paymentMethod || "",
+    (p.amount || 0).toString(),
+    p.transactionId || "N/A",
+    p.notes || ""
+  ]);
+
+  downloadCsv(headers, rows, `eagle_travels_payments_ledger_${new Date().toISOString().slice(0, 10)}.csv`);
+}
+
+/**
+ * Export Expenses Log to CSV
+ */
+export function exportExpensesToCsv(expenses: Expense[]) {
+  const headers = [
+    "Expense ID",
+    "Date",
+    "Category",
+    "Amount (₹)",
+    "Paid To / Vendor",
+    "Payment Mode",
+    "Notes"
+  ];
+
+  const rows = expenses.map(e => [
+    e.id || "",
+    e.date || "",
+    e.category || "",
+    (e.amount || 0).toString(),
+    e.paidTo || "",
+    e.paymentMethod || "",
+    e.notes || ""
+  ]);
+
+  downloadCsv(headers, rows, `eagle_travels_expenses_log_${new Date().toISOString().slice(0, 10)}.csv`);
 }

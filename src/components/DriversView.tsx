@@ -9,6 +9,7 @@ import {
   Search,
   Plus,
   Phone,
+  PhoneCall,
   Mail,
   Award,
   Calendar,
@@ -469,9 +470,15 @@ export function DriversView({ db, onUpdateDb }: DriversViewProps) {
                     <h3 className="text-xl font-bold font-display text-slate-800 mt-1">
                       {selectedDriver.name}
                     </h3>
-                    <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                      <Phone className="w-3.5 h-3.5" /> {selectedDriver.phone}
-                      {selectedDriver.email && <>• <Mail className="w-3.5 h-3.5" /> {selectedDriver.email}</>}
+                    <div className="flex items-center gap-2 text-xs text-slate-500 pt-1">
+                      <a
+                        href={`tel:${selectedDriver.phone}`}
+                        className="inline-flex items-center gap-1.5 text-xs font-mono font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-lg border border-emerald-200 transition cursor-pointer"
+                        title={`Click to call driver ${selectedDriver.name}`}
+                      >
+                        <PhoneCall className="w-3.5 h-3.5 text-emerald-600" /> Call {selectedDriver.phone}
+                      </a>
+                      {selectedDriver.email && <span className="flex items-center gap-1"><Mail className="w-3.5 h-3.5 text-slate-400" /> {selectedDriver.email}</span>}
                     </div>
                   </div>
                 </div>

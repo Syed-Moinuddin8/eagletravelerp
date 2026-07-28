@@ -567,9 +567,6 @@ export function VehiclesView({ db, onUpdateDb }: VehiclesViewProps) {
                       <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 text-[8px] font-bold uppercase rounded font-mono">
                         {v.category}
                       </span>
-                      <span className="font-mono text-[9px] text-slate-400 font-bold">
-                        {v.vehicleNumber}
-                      </span>
                     </div>
                     <h4 className="font-bold text-slate-800 text-xs">{v.model}</h4>
                     <p className="text-[10px] font-bold text-brand-600 font-mono">
@@ -598,7 +595,7 @@ export function VehiclesView({ db, onUpdateDb }: VehiclesViewProps) {
             </button>
             {selectedVeh && (
               <span className="text-[10px] font-mono font-bold text-slate-300 bg-slate-800 px-2 py-1 rounded">
-                {selectedVeh.vehicleNumber}
+                {selectedVeh.model}
               </span>
             )}
           </div>
@@ -622,7 +619,6 @@ export function VehiclesView({ db, onUpdateDb }: VehiclesViewProps) {
                     <h3 className="text-xl font-bold font-display text-slate-800">
                       {selectedVeh.model}
                     </h3>
-                    <p className="text-xs text-slate-400">Class Identifier/Reference: <span className="font-mono font-semibold text-slate-600">{selectedVeh.vehicleNumber}</span></p>
                   </div>
                 </div>
 

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useToasts } from "./Toast";
+import { exportExpensesToCsv } from "../utils/csvExport";
 import {
   ErpDatabase,
   Expense,
@@ -169,13 +170,23 @@ export function ExpensesView({ db, onUpdateDb }: ExpensesViewProps) {
           <h2 className="text-2xl font-bold font-display text-slate-800">Operational Expenses Log</h2>
           <p className="text-sm text-slate-500">Log agency expenditures, fuel top-ups, mechanical servicing costs, and driver salary disbursements.</p>
         </div>
-        <button
-          onClick={() => setShowAddForm(!showAddForm)}
-          className="flex items-center gap-1.5 px-4 py-2 bg-rose-500 hover:bg-rose-600 text-white text-sm font-semibold rounded-xl shadow-sm transition"
-          id="log-expense-btn"
-        >
-          <Plus className="w-4 h-4" /> Log Expenditure
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => exportExpensesToCsv(filteredExpenses)}
+            className="flex items-center gap-1.5 px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-sm font-semibold rounded-xl shadow-2xs transition cursor-pointer"
+            id="export-expenses-csv"
+            title="Export expenses log to CSV"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600" /> Export CSV
+          </button>
+          <button
+            onClick={() => setShowAddForm(!showAddForm)}
+            className="flex items-center gap-1.5 px-4 py-2 bg-rose-500 hover:bg-rose-600 text-white text-sm font-semibold rounded-xl shadow-sm transition cursor-pointer"
+            id="log-expense-btn"
+          >
+            <Plus className="w-4 h-4" /> Log Expenditure
+          </button>
+        </div>
       </div>
 
       {/* Log Expenditure Form Dropdown */}

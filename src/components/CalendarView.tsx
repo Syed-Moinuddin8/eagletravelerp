@@ -21,29 +21,58 @@ interface CalendarViewProps {
 
 export function CalendarView({ db }: CalendarViewProps) {
   const { showToast } = useToasts();
-  // Static state locked to July 2026 context
-  const [currentYear, setCurrentYear] = useState(2026);
-  const [currentMonth, setCurrentMonth] = useState(6); // July is month index 6 (0-indexed: Jan=0...Jul=6)
+  const today = new Date();
+
+  // Dynamic real-time date state
+  const [currentYear, setCurrentYear] = useState(() => today.getFullYear());
+  const [currentMonth, setCurrentMonth] = useState(() => today.getMonth()); // 0-indexed (Jan=0, Jul=6...)
 
   const monthNames = [
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December"
   ];
 
-  // Selected date details
-  const [selectedDay, setSelectedDay] = useState<number | null>(24); // Selected 24th July by default (current date)
+  // Selected day state
+  const [selectedDay, setSelectedDay] = useState<number | null>(() => today.getDate());
+
+  const handlePrevMonth = () => {
+    if (currentMonth === 0) {
+      setCurrentMonth(11);
+      setCurrentYear(prev => prev - 1);
+    } else {
+      setCurrentMonth(prev => prev - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (currentMonth === 11) {
+      setCurrentMonth(0);
+      setCurrentYear(prev => prev + 1);
+    } else {
+      setCurrentMonth(prev => prev + 1);
+    }
+  };
+
+  const handleToday = () => {
+    const now = new Date();
+    setCurrentYear(now.getFullYear());
+    setCurrentMonth(now.getMonth());
+    setSelectedDay(now.getDate());
+  };
 
   // Calculate calendar days
-  // July 1, 2026 is a Wednesday (day index 3: Sun=0, Mon=1, Tue=2, Wed=3)
   const firstDayIndex = new Date(currentYear, currentMonth, 1).getDay();
   const totalDays = new Date(currentYear, currentMonth + 1, 0).getDate();
 
   const daysArray = Array.from({ length: totalDays }, (_, i) => i + 1);
   const prefixEmptyBlocks = Array.from({ length: firstDayIndex }, (_, i) => null);
 
-  // Map events to dates in July 2026
+  // Map events to dates for current displayed month and year
   const getEventsForDate = (day: number) => {
-    const dateStr = `${currentYear}-07-${day < 10 ? '0' + day : day}`;
+    const monthStr = String(currentMonth + 1).padStart(2, '0');
+    const dayStr = String(day).padStart(2, '0');
+    const dateStr = `${currentYear}-${monthStr}-${dayStr}`;
+
     const events: { title: string; type: "trip" | "service" | "renewal" | "followup"; meta?: string }[] = [];
 
     // Check active trips starting on this day
@@ -56,17 +85,17 @@ export function CalendarView({ db }: CalendarViewProps) {
     // Check vehicle service (last serviced or maintenance entries)
     db.vehicles.forEach(v => {
       if (v.lastServiceDate === dateStr) {
-        events.push({ title: `Service: ${v.vehicleNumber}`, type: "service", meta: `${v.brand} maintenance` });
+        events.push({ title: `Service: ${v.model}`, type: "service", meta: `${v.brand} maintenance` });
       }
     });
 
     // Check government permit/insurance exiries
     db.vehicles.forEach(v => {
       if (v.insuranceExpiry === dateStr) {
-        events.push({ title: `Insurance: ${v.vehicleNumber}`, type: "renewal", meta: "Insurance Policy Expiry" });
+        events.push({ title: `Insurance: ${v.model}`, type: "renewal", meta: "Insurance Policy Expiry" });
       }
       if (v.permitExpiry === dateStr) {
-        events.push({ title: `Permit: ${v.vehicleNumber}`, type: "renewal", meta: "Permit Expiry" });
+        events.push({ title: `Permit: ${v.model}`, type: "renewal", meta: "Permit Expiry" });
       }
     });
 
@@ -99,16 +128,25 @@ export function CalendarView({ db }: CalendarViewProps) {
               {monthNames[currentMonth]} {currentYear}
             </h3>
             
-            <div className="flex gap-2 text-xs">
+            <div className="flex items-center gap-2 text-xs">
               <button 
-                onClick={() => showToast("Static calendar locked to July 2026 operations cycle.", "info")}
+                onClick={handleToday}
+                className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg transition"
+                title="Go to Today"
+              >
+                Today
+              </button>
+              <button 
+                onClick={handlePrevMonth}
                 className="p-1.5 hover:bg-slate-50 border border-slate-200 rounded-lg transition"
+                aria-label="Previous Month"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
               <button 
-                onClick={() => showToast("Static calendar locked to July 2026 operations cycle.", "info")}
+                onClick={handleNextMonth}
                 className="p-1.5 hover:bg-slate-50 border border-slate-200 rounded-lg transition"
+                aria-label="Next Month"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
@@ -130,7 +168,11 @@ export function CalendarView({ db }: CalendarViewProps) {
             {daysArray.map(day => {
               const isSelected = day === selectedDay;
               const dayEvents = getEventsForDate(day);
-              const isToday = day === 24; // Static current date July 24 2026
+              
+              const isToday = 
+                day === today.getDate() && 
+                currentMonth === today.getMonth() && 
+                currentYear === today.getFullYear();
 
               return (
                 <div
@@ -140,11 +182,18 @@ export function CalendarView({ db }: CalendarViewProps) {
                     isSelected 
                       ? "border-brand-500 bg-brand-50 text-brand-700 shadow-md ring-2 ring-brand-200" 
                       : isToday
-                      ? "border-slate-300 bg-slate-50 text-slate-800 font-bold"
+                      ? "border-emerald-500 bg-emerald-50 text-emerald-900 font-bold ring-2 ring-emerald-400"
                       : "border-slate-50 hover:border-slate-200 hover:bg-slate-50/50 text-slate-700"
                   }`}
                 >
-                  <span className={`font-bold self-start text-xs ${isToday && !isSelected ? 'underline decoration-2' : ''}`}>{day}</span>
+                  <div className="flex justify-between items-center w-full">
+                    <span className={`font-bold text-xs ${isToday && !isSelected ? 'text-emerald-700' : ''}`}>{day}</span>
+                    {isToday && (
+                      <span className="text-[9px] font-extrabold uppercase px-1 py-0.2 rounded bg-emerald-600 text-white tracking-wider">
+                        Today
+                      </span>
+                    )}
+                  </div>
                   
                   {/* Miniature Event Indicator Dots */}
                   <div className="flex justify-center gap-1 mt-1 shrink-0 overflow-hidden">
@@ -169,7 +218,7 @@ export function CalendarView({ db }: CalendarViewProps) {
         {/* Right: Selected Date Event Details (Span 4) */}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-xs p-6 lg:col-span-4 h-[470px] flex flex-col overflow-hidden">
           <h3 className="text-md font-bold font-display text-slate-800 border-b border-slate-100 pb-3 shrink-0">
-            Agenda: {selectedDay} July 2026
+            Agenda: {selectedDay ? `${selectedDay} ${monthNames[currentMonth]} ${currentYear}` : "Select a date"}
           </h3>
 
           <div className="flex-1 overflow-y-auto pt-4 space-y-3">

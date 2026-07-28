@@ -123,7 +123,7 @@ export function ReportsView({ db }: ReportsViewProps) {
                   <tr key={trip.id} className="hover:bg-slate-50/55 transition">
                     <td className="p-3 font-mono font-bold text-slate-800">{trip.id}</td>
                     <td className="p-3">{trip.customerName}</td>
-                    <td className="p-3 font-mono text-slate-500">{trip.vehicleNumber}</td>
+                    <td className="p-3 font-mono text-slate-500">{trip.vehicleModel || "Allocated Vehicle"}</td>
                     <td className="p-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">{trip.status}</td>
                     <td className="p-3 text-right font-mono text-slate-800">₹{trip.totalFare.toLocaleString("en-IN")}</td>
                   </tr>

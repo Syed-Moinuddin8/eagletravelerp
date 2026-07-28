@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useToasts } from "./Toast";
+import { format12HourTime } from "../utils/timeUtils";
 import {
   ErpDatabase,
   Customer,
@@ -12,6 +13,7 @@ import {
   Search,
   Plus,
   Phone,
+  PhoneCall,
   Mail,
   MapPin,
   FileText,
@@ -378,16 +380,16 @@ export function CustomersView({ db, onUpdateDb }: CustomersViewProps) {
       createdAt: new Date().toISOString(),
       vehicle: formData.vehicle || undefined,
       vehicleProvider: formData.vehicleProvider || undefined,
-      assignedRateEngage: formData.assignedRateEngage ? Number(formData.assignedRateEngage) : undefined,
-      perKmRate: formData.perKmRate ? Number(formData.perKmRate) : undefined,
-      driverBata: formData.driverBata ? Number(formData.driverBata) : undefined,
-      advanceAmount: formData.advanceAmount ? Number(formData.advanceAmount) : undefined,
+      assignedRateEngage: formData.assignedRateEngage !== "" && formData.assignedRateEngage !== undefined && formData.assignedRateEngage !== null ? Number(formData.assignedRateEngage) : undefined,
+      perKmRate: formData.perKmRate !== "" && formData.perKmRate !== undefined && formData.perKmRate !== null ? Number(formData.perKmRate) : undefined,
+      driverBata: formData.driverBata !== "" && formData.driverBata !== undefined && formData.driverBata !== null ? Number(formData.driverBata) : undefined,
+      advanceAmount: formData.advanceAmount !== "" && formData.advanceAmount !== undefined && formData.advanceAmount !== null ? Number(formData.advanceAmount) : undefined,
       pickupLocation: formData.pickupLocation || undefined,
       pickupTime: formData.pickupTime || undefined,
       visitingPlaces: formData.visitingPlaces || undefined,
-      profitPerKm: formData.profitPerKm ? Number(formData.profitPerKm) : undefined,
-      profitBata: formData.profitBata ? Number(formData.profitBata) : undefined,
-      profitEngage: formData.profitEngage ? Number(formData.profitEngage) : undefined,
+      profitPerKm: formData.profitPerKm !== "" && formData.profitPerKm !== undefined && formData.profitPerKm !== null ? Number(formData.profitPerKm) : undefined,
+      profitBata: formData.profitBata !== "" && formData.profitBata !== undefined && formData.profitBata !== null ? Number(formData.profitBata) : undefined,
+      profitEngage: formData.profitEngage !== "" && formData.profitEngage !== undefined && formData.profitEngage !== null ? Number(formData.profitEngage) : undefined,
       startDate: formData.startDate || undefined,
       endDate: formData.endDate || undefined,
       passengers: formData.passengers ? Number(formData.passengers) : undefined
@@ -463,8 +465,6 @@ export function CustomersView({ db, onUpdateDb }: CustomersViewProps) {
       return;
     }
 
-    const newAdvanceVal = editFormData.advanceAmount ? Number(editFormData.advanceAmount) : 0;
-
     const updatedCustomers = db.customers.map(c => {
       if (c.id === selectedCust.id) {
         return {
@@ -478,16 +478,16 @@ export function CustomersView({ db, onUpdateDb }: CustomersViewProps) {
           notes: editFormData.notes,
           vehicle: editFormData.vehicle || undefined,
           vehicleProvider: editFormData.vehicleProvider || undefined,
-          assignedRateEngage: editFormData.assignedRateEngage ? Number(editFormData.assignedRateEngage) : undefined,
-          perKmRate: editFormData.perKmRate ? Number(editFormData.perKmRate) : undefined,
-          driverBata: editFormData.driverBata ? Number(editFormData.driverBata) : undefined,
-          advanceAmount: editFormData.advanceAmount ? Number(editFormData.advanceAmount) : undefined,
+          assignedRateEngage: editFormData.assignedRateEngage !== "" && editFormData.assignedRateEngage !== undefined && editFormData.assignedRateEngage !== null ? Number(editFormData.assignedRateEngage) : undefined,
+          perKmRate: editFormData.perKmRate !== "" && editFormData.perKmRate !== undefined && editFormData.perKmRate !== null ? Number(editFormData.perKmRate) : undefined,
+          driverBata: editFormData.driverBata !== "" && editFormData.driverBata !== undefined && editFormData.driverBata !== null ? Number(editFormData.driverBata) : undefined,
+          advanceAmount: editFormData.advanceAmount !== "" && editFormData.advanceAmount !== undefined && editFormData.advanceAmount !== null ? Number(editFormData.advanceAmount) : undefined,
           pickupLocation: editFormData.pickupLocation || undefined,
           pickupTime: editFormData.pickupTime || undefined,
           visitingPlaces: editFormData.visitingPlaces || undefined,
-          profitPerKm: editFormData.profitPerKm ? Number(editFormData.profitPerKm) : undefined,
-          profitBata: editFormData.profitBata ? Number(editFormData.profitBata) : undefined,
-          profitEngage: editFormData.profitEngage ? Number(editFormData.profitEngage) : undefined,
+          profitPerKm: editFormData.profitPerKm !== "" && editFormData.profitPerKm !== undefined && editFormData.profitPerKm !== null ? Number(editFormData.profitPerKm) : undefined,
+          profitBata: editFormData.profitBata !== "" && editFormData.profitBata !== undefined && editFormData.profitBata !== null ? Number(editFormData.profitBata) : undefined,
+          profitEngage: editFormData.profitEngage !== "" && editFormData.profitEngage !== undefined && editFormData.profitEngage !== null ? Number(editFormData.profitEngage) : undefined,
           startDate: editFormData.startDate || undefined,
           endDate: editFormData.endDate || undefined,
           passengers: editFormData.passengers ? Number(editFormData.passengers) : undefined
@@ -496,68 +496,9 @@ export function CustomersView({ db, onUpdateDb }: CustomersViewProps) {
       return c;
     });
 
-    // Also sync advance payment to customer's active/upcoming trips & invoices
-    const updatedTrips = db.trips.map(t => {
-      if (t.customerId === selectedCust.id || t.customerName === selectedCust.name) {
-        const totalFare = t.totalFare || ((t.baseFare || 0) + (t.gstAmount || 0));
-        const status: "Pending" | "Partial" | "Paid" = newAdvanceVal >= totalFare && totalFare > 0 ? "Paid" : (newAdvanceVal > 0 ? "Partial" : "Pending");
-        return {
-          ...t,
-          advancePaid: newAdvanceVal,
-          paymentStatus: status
-        };
-      }
-      return t;
-    });
-
-    const updatedInvoices = db.invoices.map(inv => {
-      if (inv.customerName === selectedCust.name || inv.customerEmail === selectedCust.email || inv.customerPhone === selectedCust.phone) {
-        const balance = Math.max(0, inv.totalAmount - newAdvanceVal);
-        const status: "Pending" | "Partial" | "Paid" = newAdvanceVal >= inv.totalAmount && inv.totalAmount > 0 ? "Paid" : (newAdvanceVal > 0 ? "Partial" : "Pending");
-        return {
-          ...inv,
-          advanceAmount: newAdvanceVal,
-          balanceDue: balance,
-          paymentStatus: status
-        };
-      }
-      return inv;
-    });
-
-    let finalPayments = [...db.payments];
-    if (newAdvanceVal > 0) {
-      const custTrip = updatedTrips.find(t => t.customerId === selectedCust.id || t.customerName === selectedCust.name);
-      const tripNum = custTrip?.id || `CUST-${selectedCust.id}`;
-      const invId = updatedInvoices.find(i => i.customerName === selectedCust.name)?.id || null;
-      const existingIdx = finalPayments.findIndex(p => p.customerName === selectedCust.name || p.tripNumber === tripNum);
-      if (existingIdx >= 0) {
-        finalPayments[existingIdx] = {
-          ...finalPayments[existingIdx],
-          amount: newAdvanceVal,
-          customerName: editFormData.name,
-          notes: `Updated advance payment for customer ${editFormData.name}.`
-        };
-      } else {
-        finalPayments = [{
-          id: `PAY-ADV-${Math.floor(100 + Math.random() * 900)}`,
-          invoiceId: invId,
-          tripNumber: tripNum,
-          customerName: editFormData.name,
-          amount: newAdvanceVal,
-          paymentMethod: "UPI" as const,
-          transactionId: `TXN-ADV-${Date.now().toString().slice(-4)}`,
-          date: new Date().toISOString().split('T')[0],
-          notes: `Advance payment recorded for customer ${editFormData.name}.`
-        }, ...finalPayments];
-      }
-    }
-
     onUpdateDb({
       ...db,
-      customers: updatedCustomers,
-      trips: updatedTrips,
-      invoices: updatedInvoices,
-      payments: finalPayments
+      customers: updatedCustomers
     });
 
     setIsEditing(false);
@@ -1620,7 +1561,13 @@ export function CustomersView({ db, onUpdateDb }: CustomersViewProps) {
                       {selectedCust.name}
                     </h3>
                     <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-slate-500 pt-1">
-                      <span className="flex items-center gap-1"><Phone className="w-3.5 h-3.5 text-slate-400" /> {selectedCust.phone}</span>
+                      <a
+                        href={`tel:${selectedCust.phone}`}
+                        className="inline-flex items-center gap-1.5 text-xs font-mono font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-lg border border-emerald-200 transition cursor-pointer"
+                        title={`Click to call ${selectedCust.name}`}
+                      >
+                        <PhoneCall className="w-3.5 h-3.5 text-emerald-600" /> Call {selectedCust.phone}
+                      </a>
                       {selectedCust.email && <span className="flex items-center gap-1"><Mail className="w-3.5 h-3.5 text-slate-400" /> {selectedCust.email}</span>}
                       <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5 text-slate-400" /> {selectedCust.address}</span>
                     </div>
@@ -1717,7 +1664,7 @@ export function CustomersView({ db, onUpdateDb }: CustomersViewProps) {
                             </span>
                             {selectedCust.pickupTime && (
                               <span className="text-emerald-300 text-[11px] font-medium flex items-center gap-1 mt-0.5">
-                                <Clock className="w-3 h-3 text-emerald-400 shrink-0" /> {selectedCust.pickupTime}
+                                <Clock className="w-3 h-3 text-emerald-400 shrink-0" /> {format12HourTime(selectedCust.pickupTime)}
                               </span>
                             )}
                           </div>
@@ -1728,7 +1675,7 @@ export function CustomersView({ db, onUpdateDb }: CustomersViewProps) {
                           <div className="min-w-0">
                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Vehicle / Provider</span>
                             <span className="font-semibold text-slate-100 capitalize break-words block">
-                              {selectedCust.vehicle || (customerTrips.length > 0 ? customerTrips[0].vehicleNumber : "Not Assigned")}
+                              {selectedCust.vehicle || (customerTrips.length > 0 ? customerTrips[0].vehicleModel : "Not Assigned")}
                             </span>
                             {selectedCust.vehicleProvider && (
                               <span className="text-amber-300 text-[11px] font-normal block mt-0.5">
@@ -1821,25 +1768,25 @@ export function CustomersView({ db, onUpdateDb }: CustomersViewProps) {
                 <div className="space-y-0.5">
                   <p className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">Rate Engage (Base)</p>
                   <p className="text-sm font-bold text-slate-800">
-                    {selectedCust.assignedRateEngage ? `₹${selectedCust.assignedRateEngage}` : "Not Contracted"}
+                    {selectedCust.assignedRateEngage !== undefined && selectedCust.assignedRateEngage !== null ? `₹${selectedCust.assignedRateEngage}` : "Not Contracted"}
                   </p>
                 </div>
                 <div className="space-y-0.5">
                   <p className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">Per KM Charge</p>
                   <p className="text-sm font-bold text-slate-800">
-                    {selectedCust.perKmRate ? `₹${selectedCust.perKmRate}/KM` : "Not Contracted"}
+                    {selectedCust.perKmRate !== undefined && selectedCust.perKmRate !== null ? `₹${selectedCust.perKmRate}/KM` : "Not Contracted"}
                   </p>
                 </div>
                 <div className="space-y-0.5">
                   <p className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">Driver Bata (Daily)</p>
                   <p className="text-sm font-bold text-slate-800">
-                    {selectedCust.driverBata ? `₹${selectedCust.driverBata}/day` : "Not Specified"}
+                    {selectedCust.driverBata !== undefined && selectedCust.driverBata !== null ? `₹${selectedCust.driverBata}/day` : "Not Specified"}
                   </p>
                 </div>
                 <div className="space-y-0.5 bg-emerald-50/50 p-1 rounded-lg border border-emerald-100/30">
                   <p className="text-emerald-600 text-[10px] font-bold uppercase tracking-wider">Advance Amount</p>
                   <p className="text-sm font-bold text-emerald-700 font-mono">
-                    {selectedCust.advanceAmount ? `₹${selectedCust.advanceAmount}` : "₹0"}
+                    {selectedCust.advanceAmount !== undefined && selectedCust.advanceAmount !== null ? `₹${selectedCust.advanceAmount}` : "₹0"}
                   </p>
                 </div>
                 
@@ -1847,7 +1794,7 @@ export function CustomersView({ db, onUpdateDb }: CustomersViewProps) {
                   <p className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">Default Pickup Location & Time</p>
                   <p className="text-xs font-medium text-slate-700 truncate" title={selectedCust.pickupLocation}>
                     {selectedCust.pickupLocation || "Not Configured"}
-                    {selectedCust.pickupTime && <span className="ml-1 text-emerald-600 font-bold">({selectedCust.pickupTime})</span>}
+                    {selectedCust.pickupTime && <span className="ml-1 text-emerald-600 font-bold">({format12HourTime(selectedCust.pickupTime)})</span>}
                   </p>
                 </div>
                 <div className="col-span-2 md:col-span-4 space-y-0.5 pt-1 border-t border-slate-200/30">
@@ -1875,19 +1822,19 @@ export function CustomersView({ db, onUpdateDb }: CustomersViewProps) {
                   <div className="space-y-0.5 bg-emerald-50/20 px-2 py-1.5 rounded-lg border border-emerald-100/20">
                     <p className="text-emerald-700 text-[9px] font-bold uppercase tracking-wider">Configured Profit per KM</p>
                     <p className="text-xs font-bold text-slate-800">
-                      {selectedCust.profitPerKm !== undefined ? `₹${selectedCust.profitPerKm}/KM` : "₹0.00/KM"}
+                      {selectedCust.profitPerKm !== undefined && selectedCust.profitPerKm !== null ? `₹${selectedCust.profitPerKm}/KM` : "₹0.00/KM"}
                     </p>
                   </div>
                   <div className="space-y-0.5 bg-emerald-50/20 px-2 py-1.5 rounded-lg border border-emerald-100/20">
                     <p className="text-emerald-700 text-[9px] font-bold uppercase tracking-wider">Configured Profit Bata</p>
                     <p className="text-xs font-bold text-slate-800">
-                      {selectedCust.profitBata !== undefined ? `₹${selectedCust.profitBata}/day` : "₹0/day"}
+                      {selectedCust.profitBata !== undefined && selectedCust.profitBata !== null ? `₹${selectedCust.profitBata}/day` : "₹0/day"}
                     </p>
                   </div>
                   <div className="space-y-0.5 bg-emerald-50/20 px-2 py-1.5 rounded-lg border border-emerald-100/20">
                     <p className="text-emerald-700 text-[9px] font-bold uppercase tracking-wider">Configured Profit Engage</p>
                     <p className="text-xs font-bold text-slate-800">
-                      {selectedCust.profitEngage !== undefined ? `₹${selectedCust.profitEngage}` : "₹0"}
+                      {selectedCust.profitEngage !== undefined && selectedCust.profitEngage !== null ? `₹${selectedCust.profitEngage}` : "₹0"}
                     </p>
                   </div>
                 </div>

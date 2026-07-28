@@ -10,6 +10,7 @@ import {
   TrendingUp,
   TrendingDown,
   Clock,
+  PhoneCall,
   Car,
   Users,
   Briefcase,
@@ -107,12 +108,6 @@ export function DashboardView({
 
   // Total profit displayed
   const totalProfit = completedTripsProfit > 0 ? completedTripsProfit : netCashProfit;
-
-  // Helper stats
-  const totalVehicles = db.vehicles.length;
-  const activeVehicles = db.vehicles.filter(v => !!v.currentTripId).length;
-  const availableVehicles = db.vehicles.filter(v => !v.currentTripId && v.isAvailable).length;
-  const maintenanceVehicles = db.vehicles.filter(v => !v.isAvailable && !v.currentTripId).length;
 
   const totalInvoicesAmount = db.invoices.reduce((sum, inv) => sum + inv.totalAmount, 0);
   const totalBalanceDue = db.invoices.reduce((sum, inv) => sum + inv.balanceDue, 0);
@@ -277,9 +272,28 @@ export function DashboardView({
                         <p className="text-xs text-slate-500 mt-1 truncate">
                           📍 <span className="font-semibold text-slate-700">{trip.pickup}</span> → {trip.drop}
                         </p>
-                        <p className="text-[11px] text-slate-400 mt-0.5">
-                          Driver: <span className="font-medium text-slate-600">{trip.driverName || "Allocated"}</span> • Vehicle: <span className="font-medium text-slate-600">{trip.vehicleModel}</span>
-                        </p>
+                        <div className="text-[11px] text-slate-400 mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <span>Driver: <span className="font-semibold text-slate-700">{trip.driverName || "Allocated"}</span></span>
+                          {trip.driverPhone && (
+                            <a
+                              href={`tel:${trip.driverPhone}`}
+                              className="inline-flex items-center gap-0.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-200 transition cursor-pointer"
+                              title={`Call driver ${trip.driverName || ""}`}
+                            >
+                              <PhoneCall className="w-2.5 h-2.5 text-emerald-600" /> Call Driver
+                            </a>
+                          )}
+                          {trip.customerPhone && (
+                            <a
+                              href={`tel:${trip.customerPhone}`}
+                              className="inline-flex items-center gap-0.5 text-[10px] font-bold text-brand-700 bg-brand-50 hover:bg-brand-100 px-1.5 py-0.5 rounded border border-brand-200 transition cursor-pointer"
+                              title={`Call customer ${trip.customerName}`}
+                            >
+                              <PhoneCall className="w-2.5 h-2.5 text-brand-600" /> Call Customer
+                            </a>
+                          )}
+                          <span>• {trip.vehicleModel}</span>
+                        </div>
                       </div>
                     </div>
 
@@ -306,42 +320,8 @@ export function DashboardView({
           </div>
         </div>
 
-        {/* Right Column (1/3): Fleet Status & Financial Quick Health */}
+        {/* Right Column (1/3): Financial Quick Health & Pending Invoices */}
         <div className="space-y-6">
-          {/* Fleet Status Summary */}
-          <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-xs space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-sm font-bold font-display text-slate-800 flex items-center gap-2">
-                <Car className="w-4 h-4 text-brand-500" /> Fleet Availability
-              </h3>
-              <button
-                onClick={() => onNavigate("vehicles")}
-                className="text-[11px] font-bold text-brand-600 hover:text-brand-700 cursor-pointer"
-              >
-                Manage Fleet →
-              </button>
-            </div>
-
-            <div className="grid grid-cols-3 gap-2 text-center">
-              <div className="p-3 bg-emerald-50/70 border border-emerald-100 rounded-xl">
-                <p className="text-[10px] font-bold uppercase text-emerald-700">On Road</p>
-                <p className="text-xl font-extrabold text-emerald-800 mt-1">{activeVehicles}</p>
-              </div>
-              <div className="p-3 bg-blue-50/70 border border-blue-100 rounded-xl">
-                <p className="text-[10px] font-bold uppercase text-blue-700">Available</p>
-                <p className="text-xl font-extrabold text-blue-800 mt-1">{availableVehicles}</p>
-              </div>
-              <div className="p-3 bg-amber-50/70 border border-amber-100 rounded-xl">
-                <p className="text-[10px] font-bold uppercase text-amber-700">Maintenance</p>
-                <p className="text-xl font-extrabold text-amber-800 mt-1">{maintenanceVehicles}</p>
-              </div>
-            </div>
-
-            <div className="pt-1 flex items-center justify-between text-xs text-slate-500 border-t border-slate-100">
-              <span>Total Fleet Size:</span>
-              <span className="font-bold text-slate-800">{totalVehicles} Vehicles Registered</span>
-            </div>
-          </div>
 
           {/* Pending Collections / Outstanding Balances Card */}
           <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-xs space-y-3">

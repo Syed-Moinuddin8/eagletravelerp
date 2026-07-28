@@ -64,6 +64,7 @@ export default function App() {
   // Load data from Supabase on mount & listen to Realtime changes
   useEffect(() => {
     let unsubscribe: (() => void) | null = null;
+    let isMounted = true;
 
     const loadSupabaseData = async () => {
       try {
@@ -71,29 +72,45 @@ export default function App() {
         localStorage.removeItem('eagle_travels_erp_db_v1');
         
         const data = await loadDatabaseAsync();
+        if (!isMounted) return;
         setDb(data);
         
         // Check if we need to show migration banner
         const supabaseStatus = await checkSupabaseData();
+        if (!isMounted) return;
         if (!supabaseStatus.hasData) {
           setShowMigrationBanner(true);
         }
 
         // Subscribe to live PostgreSQL database changes across all tables
-        unsubscribe = subscribeToRealtime(async () => {
+        const sub = subscribeToRealtime(async () => {
+          if (!isMounted) return;
           const freshData = await loadDatabaseAsync();
-          setDb(freshData);
+          if (isMounted) {
+            setDb(freshData);
+          }
         });
+
+        if (!isMounted) {
+          sub();
+        } else {
+          unsubscribe = sub;
+        }
       } catch (error) {
-        console.error('Error loading Supabase data:', error);
+        if (isMounted) {
+          console.error('Error loading Supabase data:', error);
+        }
       } finally {
-        setIsLoadingSupabase(false);
+        if (isMounted) {
+          setIsLoadingSupabase(false);
+        }
       }
     };
     
     loadSupabaseData();
 
     return () => {
+      isMounted = false;
       if (unsubscribe) unsubscribe();
     };
   }, []);
@@ -123,8 +140,9 @@ export default function App() {
   useEffect(() => {
     const updateTime = () => {
       const now = new Date();
-      // Lock date context to July 2026 as per user specification but keep ticking time
-      setSystemTime(`12 July 2026, ${now.toLocaleTimeString("en-US", { hour12: false })}`);
+      const formattedDate = now.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+      const formattedTime = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true });
+      setSystemTime(`${formattedDate}, ${formattedTime}`);
     };
     updateTime();
     const interval = setInterval(updateTime, 1000);
@@ -240,8 +258,8 @@ export default function App() {
           <span className="font-bold font-display tracking-tight text-slate-800 text-lg">{db.settings.name}</span>
         </div>
 
-        <div className="flex items-center gap-3">
-          {/* Notifications Trigger */}
+        <div className="flex items-center gap-2">
+          {/* Mobile Notifications Trigger */}
           <button 
             onClick={() => setShowNotifications(!showNotifications)}
             className="relative p-2 hover:bg-slate-50 text-slate-500 rounded-xl transition"
@@ -250,6 +268,16 @@ export default function App() {
             {unreadNotificationsCount > 0 && (
               <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-rose-500 rounded-full animate-ping"></span>
             )}
+          </button>
+
+          {/* Mobile Logout Button */}
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition cursor-pointer"
+            title="Logout"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span>Logout</span>
           </button>
 
           <button 
@@ -333,12 +361,12 @@ export default function App() {
           </nav>
 
           {/* Logged in Employee Account badge footer */}
-          <div className="p-4 border-t border-slate-50 shrink-0 bg-slate-50/50">
-            <div className={`flex items-center ${sidebarCollapsed ? "md:justify-center" : "gap-3"}`}>
+          <div className="p-3.5 border-t border-slate-50 shrink-0 bg-slate-50/50 flex items-center justify-between gap-2">
+            <div className={`flex items-center ${sidebarCollapsed ? "md:justify-center" : "gap-2.5"} min-w-0`}>
               <img
                 src={db.session.avatarUrl}
                 alt={db.session.name}
-                className="w-10 h-10 rounded-xl object-cover border border-slate-100 shrink-0"
+                className="w-9 h-9 rounded-xl object-cover border border-slate-100 shrink-0"
                 referrerPolicy="no-referrer"
               />
               {!sidebarCollapsed && (
@@ -348,6 +376,16 @@ export default function App() {
                 </div>
               )}
             </div>
+
+            {!sidebarCollapsed && (
+              <button
+                onClick={handleLogout}
+                className="flex items-center justify-center p-2 text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200/80 rounded-xl transition cursor-pointer shrink-0"
+                title="Logout from Portal"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
       </aside>
@@ -416,9 +454,6 @@ export default function App() {
             <div className="h-6 w-px bg-slate-200"></div>
 
             <div className="flex items-center gap-3">
-              <span className="text-[10px] font-bold tracking-widest text-emerald-600 uppercase bg-emerald-50 px-2.5 py-1 rounded">
-                Server online
-              </span>
               <button
                 onClick={handleLogout}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition cursor-pointer"
@@ -432,7 +467,7 @@ export default function App() {
         </header>
 
         {/* Dynamic View Workspace Frame */}
-        <main className="flex-1 overflow-y-auto p-5 md:p-8">
+        <main className="flex-1 overflow-y-auto p-2 sm:p-5 md:p-8 pb-12 md:pb-8">
           {activeTab === "dashboard" && (
             <DashboardView
               db={db}

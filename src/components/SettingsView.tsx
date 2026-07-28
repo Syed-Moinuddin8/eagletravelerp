@@ -186,7 +186,7 @@ export function SettingsView({ db, onUpdateDb }: SettingsViewProps) {
             role: operatorRole,
             salary: 0,
             joiningDate: new Date().toISOString().split('T')[0],
-            status: 'Active',
+            status: 'Active' as const,
             avatarUrl: avatarUrl.trim()
           },
           ...db.employees
