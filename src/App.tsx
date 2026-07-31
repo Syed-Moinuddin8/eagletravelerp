@@ -55,7 +55,6 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<string>("dashboard");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [showNotifications, setShowNotifications] = useState(false);
   const [systemTime, setSystemTime] = useState("");
   const [isLoadingSupabase, setIsLoadingSupabase] = useState(true);
   const [showMigrationBanner, setShowMigrationBanner] = useState(false);
@@ -158,15 +157,6 @@ export default function App() {
     });
   };
 
-  // Mark all notifications as read
-  const handleMarkNotificationsRead = () => {
-    const updated = db.notifications.map(n => ({ ...n, read: true }));
-    handleUpdateDb({
-      ...db,
-      notifications: updated
-    });
-  };
-
   // Side navigation definition
   const navigationItems = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -180,8 +170,6 @@ export default function App() {
     { id: "analytics", label: "BI Analytics", icon: BarChart3 },
     { id: "settings", label: "Settings", icon: Settings }
   ];
-
-  const unreadNotificationsCount = db.notifications.filter(n => !n.read).length;
 
   if (!isAuthenticated) {
     return (
@@ -259,17 +247,6 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Mobile Notifications Trigger */}
-          <button 
-            onClick={() => setShowNotifications(!showNotifications)}
-            className="relative p-2 hover:bg-slate-50 text-slate-500 rounded-xl transition"
-          >
-            <Bell className="w-5 h-5" />
-            {unreadNotificationsCount > 0 && (
-              <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-rose-500 rounded-full animate-ping"></span>
-            )}
-          </button>
-
           {/* Mobile Logout Button */}
           <button
             onClick={handleLogout}
@@ -411,48 +388,6 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-4">
-            {/* System Notification Dropdown Alert Icon */}
-            <div className="relative">
-              <button 
-                onClick={() => setShowNotifications(!showNotifications)}
-                className="relative p-2.5 hover:bg-slate-50 text-slate-500 rounded-xl transition"
-              >
-                <Bell className="w-5 h-5" />
-                {unreadNotificationsCount > 0 && (
-                  <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-rose-500 rounded-full"></span>
-                )}
-              </button>
-
-              {/* Notification Overlay Popover */}
-              {showNotifications && (
-                <div className="absolute right-0 mt-3 w-80 bg-white border border-slate-100 rounded-2xl shadow-lg p-4 z-50 space-y-3.5 animate-fade-in">
-                  <div className="flex justify-between items-center pb-2.5 border-b border-slate-50">
-                    <h4 className="font-bold text-slate-800 text-xs">Alert Notifications</h4>
-                    <button 
-                      onClick={handleMarkNotificationsRead}
-                      className="text-[10px] font-bold text-brand-500 hover:text-brand-600"
-                    >
-                      Clear All
-                    </button>
-                  </div>
-                  <div className="space-y-2 max-h-[250px] overflow-y-auto">
-                    {db.notifications.length === 0 ? (
-                      <p className="text-center py-6 text-slate-400 text-xs font-semibold">All clean! No active notifications.</p>
-                    ) : (
-                      db.notifications.map(n => (
-                        <div key={n.id} className="p-2.5 bg-slate-50/50 rounded-xl text-xs space-y-1">
-                          <p className="font-bold text-slate-700">{n.title}</p>
-                          <p className="text-[11px] text-slate-500 leading-normal">{n.message}</p>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="h-6 w-px bg-slate-200"></div>
-
             <div className="flex items-center gap-3">
               <button
                 onClick={handleLogout}
