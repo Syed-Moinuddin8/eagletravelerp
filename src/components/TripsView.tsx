@@ -1896,6 +1896,9 @@ export function TripsView({
                     </span>
                     <div className="min-w-0">
                       <p className="text-[9px] font-semibold text-slate-400 uppercase">Assigned Fleet Crew</p>
+                      {selectedTrip.driverName && (
+                        <p className="text-sm font-bold text-slate-800 mt-0.5">{selectedTrip.driverName}</p>
+                      )}
                       {selectedTrip.driverPhone ? (
                         <a
                           href={`tel:${selectedTrip.driverPhone}`}
